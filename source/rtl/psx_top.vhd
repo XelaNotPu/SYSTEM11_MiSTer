@@ -238,7 +238,7 @@ entity psx_top is
       Cheats_BusReadData    : in     std_logic_vector(31 downto 0);
       Cheats_BusDone        : in     std_logic;
 
-      -- System 11 arcade I/O inputs
+      -- ZN-1 Arcade I/O inputs
       zn_p1_right     : in  std_logic;
       zn_p1_left      : in  std_logic;
       zn_p1_down      : in  std_logic;
@@ -256,10 +256,12 @@ entity psx_top is
       zn_service      : in  std_logic;
       zn_test_mode    : in  std_logic;
       zn_dsw          : in  std_logic_vector(7 downto 0);
+      zn_cat702_key   : in  std_logic_vector(63 downto 0);
+      zn_cat702_key_b : in  std_logic_vector(63 downto 0);
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 memory map + boot-from-program
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type (0=none, 1=C406)
-      -- EEPROM blank-image download (MRA ioctl index 9, all-FF) -> s11_io EEPROM BRAM
+      -- EEPROM blank-image download (MRA ioctl index 9, all-FF) -> zn1_io EEPROM BRAM
       ee_dl_wr        : in  std_logic := '0';
       ee_dl_addr      : in  std_logic_vector(9 downto 0) := (others => '0');
       ee_dl_data      : in  std_logic_vector(31 downto 0) := (others => '0');
@@ -268,12 +270,12 @@ entity psx_top is
       mb_mips_wdata   : out std_logic_vector(15 downto 0) := (others => '0');
       mb_mips_we      : out std_logic := '0';
       mb_mips_rdata   : in  std_logic_vector(15 downto 0) := (others => '0');
-      -- C76 liveness diag from top level (SYSTEM11.sv): bit0=c76_c352_seen (C76 wrote C352
+      -- C76 liveness diag from top level (ZN1.sv): bit0=c76_c352_seen (C76 wrote C352
       -- during BIOS init = alive), bit1=c76_halted (C76 hit an unimplemented opcode = crashed)
       dbg_c76_in      : in  std_logic_vector(1 downto 0) := "00";
       dbg_c76_pc      : in  std_logic_vector(23 downto 0) := (others => '0');  -- live C76 PC -> value display
       dbg_reached_game : out std_logic := '0';  -- MIPS reached game code -> top-level overlay auto-hide
-      -- Debug bar outputs (currently tied off -- see the zn_debug_out assignment below)
+      -- Debug: {sio_ever_seen, check2_seen, check1_seen, sec_select[1:0]}
       zn_debug_out    : out std_logic_vector(6 downto 0);
       -- build #50: raw 32-bit SDRAM word latched at green anchor (CPU 0x1F644810)
       zn_debug_val    : out std_logic_vector(31 downto 0) := (others => '0');
@@ -691,7 +693,7 @@ architecture arch of psx_top is
    signal memHPScard2_WE         : std_logic := '0';
    signal memHPScard2_RD         : std_logic := '0';
 
-   -- Arcade I/O bus signals (connects memorymux to s11_io)
+   -- ZN-1 I/O bus signals (connects memorymux to zn1_io)
    signal bus_znio_addr          : unsigned(20 downto 0);
    signal bus_znio_dataWrite     : std_logic_vector(31 downto 0);
    signal bus_znio_read          : std_logic;
@@ -704,11 +706,9 @@ architecture arch of psx_top is
    signal znio_wr_prev           : std_logic := '0';
    signal zn_dbg_eeprom          : std_logic_vector(23 downto 0);
    signal bus_znio_dataRead      : std_logic_vector(31 downto 0);
-   -- s11_io 0x1FA10300 security-select register readback ({data[7],data[3],data[2]}).
-   -- Nothing consumes it in System 11 mode; kept only as the sink for the s11_io port.
-   signal zn_sec_select          : std_logic_vector(2 downto 0);
+   signal zn_sec_select          : std_logic_vector(2 downto 0);  -- {data[7],data[3],data[2]}
    signal zn_coin_out            : std_logic_vector(7 downto 0);
-   -- System 11: bank selectors (s11_io -> memorymux) + C76 mailbox (s11_io <-> c76_sound)
+   -- System 11: bank selectors (zn1_io -> memorymux) + C76 mailbox (zn1_io <-> c76_sound)
    signal zn_s11_bank            : std_logic_vector(31 downto 0);
    signal zn_dbg_bankwr          : std_logic_vector(31 downto 0);
    signal zn_mb_addr             : std_logic_vector(13 downto 0);
@@ -719,10 +719,14 @@ architecture arch of psx_top is
    signal zn_poll_val            : std_logic_vector(15 downto 0) := (others => '0');
    signal zn_poll_bit80          : std_logic := '0';
 
-   -- SNAC pass-through intermediaries. System 11 has no SIO0 peripheral, so both are
-   -- tied off below; they exist only to feed the transmitValueSnac/beginTransferSnac ports.
+   -- ZN SNAC intermediaries (joypad outputs → zn_sio inputs, zn_sio outputs → joypad inputs)
    signal zn_beginTransfer       : std_logic;
    signal zn_txbyte              : std_logic_vector(7 downto 0);
+   signal zn_action_next         : std_logic;
+   signal zn_receive_valid       : std_logic;
+   signal zn_ack                 : std_logic;
+   signal zn_rxbyte              : std_logic_vector(7 downto 0);
+   signal zn_sel_p2              : std_logic := '0';  -- selectedPort2Snac; also drives chip_sel
    signal ram_accessed_seen      : std_logic := '0';  -- latches on any CPU RAM request (read or write)
    signal ram_done_seen          : std_logic := '0';  -- latches when SDRAM completes a CPU transaction
    signal nonzero_read_seen      : std_logic := '0';  -- latches when SDRAM returns non-zero data (BIOS loaded)
@@ -904,6 +908,14 @@ architecture arch of psx_top is
    signal triage_red_fan                  : std_logic_vector(8 downto 0);
    signal triage_green_fan                : std_logic_vector(8 downto 0);
    signal triage_blue_fan                 : std_logic_vector(8 downto 0);
+   -- build #119: CAT702 byte-exchange diagnostics from zn_sio
+   signal dbg_first_kn01_rx               : std_logic_vector(7 downto 0);
+   -- build #157: BR2 CAT702 byte-0/byte-3 captures
+   signal b157_byte0_sig                  : std_logic_vector(7 downto 0);
+   signal b157_byte3_sig                  : std_logic_vector(7 downto 0);
+   signal b157_anchor_sig                 : std_logic;
+   signal dbg_first_kn02_rx               : std_logic_vector(7 downto 0);
+   signal dbg_kn02_ever                   : std_logic;
    -- build #114 H1+H2: cube 0x64 rect path test
    signal h12_red_anchor_sig              : std_logic;
    signal h12_green_dm_ok_sig             : std_logic;
@@ -1141,6 +1153,12 @@ architecture arch of psx_top is
    signal istat_ack_seen         : std_logic := '0';  -- latches when CPU writes I_STAT (bus_addr=0) i.e. acknowledges an IRQ
    signal pc_reached_mid         : std_logic := '0';  -- PC ever in [0x1FC01000,0x1FC09000) (boot past early-init, before GPU-init)
    signal pc_reached_gpuinit     : std_logic := '0';  -- PC ever in [0x1FC09000,0x1FC0C000) (MAME's GPU-init region @0xBFC097F8)
+   -- ZN security debug latches
+   signal zn_sio_ever_seen       : std_logic := '0';  -- any SIO byte started on port 2
+   signal zn_check1_seen         : std_logic := '0';  -- sec_select="110" (0x88=KN01) ever written
+   signal zn_check2_seen         : std_logic := '0';  -- sec_select="101" (0x84=KN02) ever written
+   signal zn_kn02_rx_nonzero    : std_logic := '0';  -- KN02 returned non-trivial byte (not 0x00/0xFF)
+
    -- build #168: sanity-check the detection mechanism by probing 3 known-good addresses.
    -- All 3 should light up bright if detection works; any dark indicates a wiring issue.
    --   RED   = ANY write to 0x000969E0 (state byte — what B167 tried; expected dark from prior data)
@@ -1594,7 +1612,7 @@ begin
    -- WHY IT IS SAFE:
    --   Namco System 11 arcade inputs do NOT travel over the PSX controller
    --   port (SIO0 @ 0x1F801040-0x1F80104F). They are direct input ports of
-   --   psx_top (zn_p1_right, zn_p1_btn, ...) wired straight into s11_io.
+   --   psx_top (zn_p1_right, zn_p1_btn, ...) wired straight into zn1_io.
    --   Verified with MAME (60s run, positive controls proving the tap works:
    --   GPU writes = 2111, ROM-bank writes = 9): Tekken performs ZERO reads
    --   and ZERO writes to SIO0. The PSX joypad state machine, the multitap,
@@ -1646,8 +1664,8 @@ begin
    joypad4_rumble   <= (others => '0');
    padMode          <= (others => '0');
 
-   -- SNAC outputs of psx_top (were driven by joypad). System 11 has no SIO0
-   -- peripheral, so every SNAC output is inert; selectedPort2Snac is tied off below.
+   -- SNAC outputs of psx_top / ZN SNAC intermediaries (were driven by joypad).
+   -- selectedPort2Snac + zn_sel_p2 are already tied off by the zn_sio removal.
    selectedPort1Snac <= '0';
    clk9Snac          <= '0';
    zn_txbyte         <= (others => '0');
@@ -1680,7 +1698,7 @@ begin
    Cheats_BusWriteData  <= (others => '0');
    Cheats_Bus_ena       <= '0';
 
-   -- build #142: arcade — SIO1 (PSX link cable @ 0x1F801050) removed.
+   -- build #142: ZN-1 arcade — SIO1 (PSX link cable @ 0x1F801050) removed.
    -- Arcade boards have no link cable. Stub bus + savestate outputs.
    bus_sio_dataRead  <= (others => '0');
    SS_DataRead_SIO   <= (others => '0');
@@ -1928,11 +1946,11 @@ begin
       SS_DataRead          => SS_DataRead_TIMER
    );
    
-   -- build #25: stub out cd_top. System 11 has no CD-ROM (all data comes from the
-   -- banked program/wave ROMs). The PSX_MiSTer-derived cd_top entity was a latent
+   -- build #25: stub out cd_top for ZN-1. ZN-1 arcades don't use CD-ROM (data via
+   -- banked ROM at 0x1FB00006). The PSX_MiSTer-derived cd_top entity was a latent
    -- bug source (irq_CDROM, resetFromCD, DMA ch3 could spuriously fire) and consumed
-   -- ~10-15% of ALMs. Replaced by cd_top_stub, which drives all outputs inactive.
-   icd_top : entity work.cd_top_stub
+   -- ~10-15% of ALMs. Replace with cd_top_zn1stub which drives all outputs inactive.
+   icd_top : entity work.cd_top_zn1stub
    port map
    (
       clk1x                => clk1x,
@@ -2311,7 +2329,7 @@ begin
 
    -- 2026-07-08 MDEC RESTORED (task #18): Tekken/System 11 intro FMVs are MDEC
    -- streams (MIPS feeds DMA0, reads decoded macroblocks via DMA1, blits to VRAM
-   -- via cpu2vram). The build #142 stub made every decoded frame zero ->
+   -- via cpu2vram). The build #142 ZN-1 stub made every decoded frame zero ->
    -- black movies. Area traded against the PSX SPU (System 11 sound = C352).
    imdec : entity work.mdec
    port map
@@ -2414,8 +2432,8 @@ begin
       bus_dataRead         => bus_exp2_dataRead
    );
 
-   -- System 11 arcade I/O register block
-   is11_io : entity work.s11_io
+   -- ZN-1 Arcade I/O register block
+   izn1_io : entity work.zn1_io
    port map
    (
       clk          => clk1x,
@@ -2479,17 +2497,24 @@ begin
       end if;
    end process;
 
-   -- Bridge the System 11 mailbox (s11_io) out to the top-level c76_sound and back.
+   -- Bridge the System 11 mailbox (zn1_io) out to the top-level c76_sound and back.
    mb_mips_addr  <= zn_mb_addr;
    mb_mips_wdata <= zn_mb_wdata;
    mb_mips_we    <= zn_mb_we;
    zn_mb_rdata   <= mb_mips_rdata;
 
-   -- SYSTEM 11 LEAN: the SIO0 security serial interface is not used. System 11
-   -- protection is the KEYCUS C-chip (C406/C409/...), implemented in s11_io; MAME's
-   -- namcos11 driver has no SIO0 security device at all. Verified with MAME (60s,
-   -- positive controls on GPU + ROM-bank writes): Tekken performs 0 reads and 0
-   -- writes to SIO0. Removing the SIO0 security block freed ~508 ALMs.
+   -- SYSTEM 11 LEAN: zn_sio (CAT702 A/B + ZNMCU security over the SIO0 SNAC byte
+   -- interface) REMOVED. CAT702 is a ZN-1 feature: MAME's namcos11 driver contains
+   -- zero CAT702 references, and every System 11 title uses a KEYCUS C-chip
+   -- (C406/C409/...) via zn1_io instead. Verified with MAME (60s, positive controls
+   -- on GPU + ROM-bank writes): Tekken performs 0 reads and 0 writes to SIO0.
+   -- Frees ~508 ALMs. Restore for ZN-1 support: git checkout release/20260712 -- rtl/psx_top.vhd
+   zn_rxbyte        <= (others => '0');
+   zn_ack           <= '0';
+   zn_action_next   <= '0';
+   zn_receive_valid <= '0';
+   zn_sel_p2        <= '0';
+   zn_sec_select    <= (others => '1');   -- CAT702 selects are active-low: all deselected
    selectedPort2Snac <= '0';
    -- DIAGNOSTIC build #15: does ANY mechanism (cpu2vram/vram2vram/vramFill/rasterizer) write at VRAM X=0?
    -- Build #14: CPU2VRAM never writes X=0 (GREEN dark). But CLUT reads X=0. Maybe vram2vram or vramFill writes there?
@@ -2683,7 +2708,7 @@ begin
    -- display/render config: [31:21]=DisplayWidth(11) [20:12]=DisplayOffsetY(9) [11:1]=drawingOffsetY(11) [0]=0
    -- mode 7 REPURPOSED (2026-07-05 write-path forensics): {vram_WE pulse count[15:0], vram_RD pulse count[15:0]}
    -- free-running counters — two JTAG reads N seconds apart give the LIVE DDR3 write/read rates.
-   -- mode 7 REPURPOSED (2026-07-06 bank-write forensics): s11_io dbg_bankwr =
+   -- mode 7 REPURPOSED (2026-07-06 bank-write forensics): zn1_io dbg_bankwr =
    -- {bankreg_wr_cnt[3:0], addr16_wr_cnt[3:0], data23_16, data7_0, addr7_0}
    zn_dbg_disp <= zn_dbg_bankwr;
    -- DMA2/GPU drain monitor: [31]gpu_dmaRequest(live) [30]DMA_GPU_writeEna(live) [29:24]=0
@@ -2813,14 +2838,14 @@ begin
    -- After test, decode RED/GREEN bar widths and /dev/mem read VRAM at Y (low 9 bits +
    -- assumed Y high bit) at the suspected X. If RED bar matches VRAM[Y][X] low 9 bits,
    -- the CLUT load delivered correct VRAM data → H7 REFUTED.
-   -- (retired) GPU buffer-swap probe.
-   -- (retired diagnostic; not applicable to System 11)
+   -- build #172: Raizing GPU buffer-swap probe.
+   -- Hypothesis: Raizing games (Bloody Roar, Brave Blade, Beastorizer) only draw to the back
    -- buffer at VRAM Y=0..239; never set the draw area or offset to the front buffer at Y=240+.
    -- Display origin is at Y=240 per MAME GP1 0x05 trace, so screen shows the empty front buffer.
    --   RED   = sticky: drawingAreaBottom ever > 239 (game ever set draw area to extend into front buffer)
    --   GREEN = sticky: drawingOffsetY ever >= 240 (game ever shifted offset into front buffer region)
-   --   BLUE  = (historical: BIOS security-check anchor; that probe no longer exists)
-   
+   --   BLUE  = b157_anchor_sig (CAT702 anchor — sanity that BIOS check passed)
+   -- Outcome on Raizing titles: RED+GREEN dark → buffer swap never happens → black screen.
    --                            RED+GREEN lit + still black → swap works, display origin issue.
    -- System 11 bring-up triage (was stale DoA++ cube signals): RED=CPU executing from
    -- RAM, GREEN=CPU accessed GPU regs, BLUE=MIPS wrote the C76 mailbox.
@@ -3054,6 +3079,10 @@ begin
             irq_cdrom_seen       <= '0';
             irq_timer_seen       <= '0';
             vblank_irq_seen      <= '0';
+            zn_sio_ever_seen  <= '0';
+            zn_check1_seen    <= '0';
+            zn_check2_seen    <= '0';
+            zn_kn02_rx_nonzero <= '0';
             -- build #172: drawing-area sticky latches
             b172_drawArea_high_ever   <= '0';
             b172_drawOffset_high_ever <= '0';
@@ -3656,6 +3685,21 @@ begin
             if irq_VBLANK = '1' then
                vblank_irq_seen <= '1';
             end if;
+            -- ZN security debug: latch security check initiations and any SIO byte
+            if zn_beginTransfer = '1' then
+               zn_sio_ever_seen <= '1';
+            end if;
+            if zn_sec_select = "110" then  -- 0x88: bit2=0→KN01 active-low (check 1)
+               zn_check1_seen <= '1';
+            end if;
+            if zn_sec_select = "101" then  -- 0x84: bit3=0→KN02 active-low (check 2)
+               zn_check2_seen <= '1';
+            end if;
+            -- kn02_rx_nonzero: KN02 replied with a byte that is not 0x00 or 0xFF
+            if zn_receive_valid = '1' and zn_sec_select = "101" and
+               zn_rxbyte /= x"00" and zn_rxbyte /= x"FF" then
+               zn_kn02_rx_nonzero <= '1';
+            end if;
 
             -- build #172: sticky latch — drawingAreaBottom > 239 (game ever drew to front buffer)
             if unsigned(drawingAreaBottom_sig) > to_unsigned(239, 10) then
@@ -3691,7 +3735,7 @@ begin
                   and b163_DMA_SPU_writeEna_d = '0' and b163_dma4_cnt /= "111111111" then
                   b163_dma4_cnt <= b163_dma4_cnt + 1;
                end if;
-               -- (BLUE bar is driven directly via triage_blue_fan, not counted here)
+               -- (BLUE bar driven by b157_anchor_sig directly via triage_blue_fan)
             end if;
             -- Edge-detect delay lines
             if mem_request = '1' and mem_isData = '1' and mem_rnw = '0'
@@ -4023,10 +4067,11 @@ begin
    ddr3_WE       <= ss_ram_WE           when (ddr3_savestate = '1') else arbiter_WE       when (arbiter_active = '1') else  vram_WE;        
    ddr3_RD       <= ss_ram_RD           when (ddr3_savestate = '1') else arbiter_RD       when (arbiter_active = '1') else  vram_RD;        
    
-   -- build #141: arcade — memcard1/memcard2 instances removed.
-   -- System 11 has no memory cards, and the PSX-console memcard logic was a source of
-   -- SIO0 bus contention. All memcard outputs are stubbed to inert values so entity
-   -- ports, pause arbitration, and DDR3 arbitration still get safe inputs.
+   -- build #141: ZN-1 arcade — memcard1/memcard2 instances removed.
+   -- Arcade has no memory cards; PSX-console memcard logic was a candidate for SIO0
+   -- bus contention with CAT702 reuse of the same SIO0 path (zn_sio module bridges
+   -- joypad SNAC pins to CAT702). All memcard outputs stubbed to inert values so
+   -- entity ports, pause arbitration, and DDR3 arbitration still get safe inputs.
 
    memcard_changed <= '0';
    saving_memcard  <= '0';

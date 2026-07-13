@@ -133,7 +133,7 @@ entity memorymux is
       bus_znio_writeMask   : out std_logic_vector(3 downto 0);
       bus_znio_dataRead    : in  std_logic_vector(31 downto 0);
 
-      -- Legacy platform id (from the PSX_MiSTer arcade lineage). System 11 uses s11_bank, not these paths.
+      -- ZN platform: 0=Visco, 1=Raizing, 2=Taito FX, 3=Atlus, 4=Tecmo
       zn_platform          : in  std_logic_vector(3 downto 0) := "0000";
 
       -- Namco System 11: when '1', boot from the 4MB game program @0x1FC00000
@@ -1035,13 +1035,17 @@ begin
                               zn_bank_8mb <= mem_dataWrite(18 downto 16);
                               state       <= BUSWRITE;
                            elsif (mem_addressData(28 downto 0) >= 16#1FA00000# and mem_addressData(28 downto 0) < 16#1FB00000#) then
-                              -- System 11 arcade I/O (0x1FA00000-0x1FAFFFFF): routed through the
-                              -- internal bus (bus_znio_*) to s11_io — player inputs, KEYCUS, EEPROM
-                              -- and the ROM bank register (0x1FA10020), which s11_io decodes and
-                              -- drives back here via the bank selectors.
+                              -- ZN-1 I/O: routed through internal bus (bus_znio_*)
+                              -- Raizing: bank is also set by sec_select write (0x1FA10300 bits[1:0])
                               ext_lastactive  <= '0';
                               if (mem_rnw = '0') then
                                  state   <= BUSWRITE;
+                                 if (zn_platform = "0001" and mem_addressData(28 downto 0) = 16#1FA10300#) then
+                                    -- build #79 fix: Raizing bank is data & 3 (bits[1:0]) per MAME raizing_zn_state::znsecsel_w.
+                                    -- Bit 2 of this data is CAT702 chip 0 select — must NOT be captured into the bank register
+                                    -- or CAT702 verification toggles corrupt the bank → "CanNotFindProgramRom ERROR B930".
+                                    zn_bank_8mb <= "0" & mem_dataWrite(1 downto 0);
+                                 end if;
                               else
                                  state   <= BUSREADREQUEST;
                                  waitcnt <= 0;

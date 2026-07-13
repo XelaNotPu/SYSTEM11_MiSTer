@@ -283,7 +283,7 @@ entity psx_mister is
       Cheats_BusReadData    : in     std_logic_vector(31 downto 0);
       Cheats_BusDone        : in     std_logic;
 
-      -- System 11 arcade I/O inputs (pass-through to psx_top)
+      -- ZN-1 Arcade I/O inputs (pass-through to psx_top)
       zn_p1_right     : in  std_logic;
       zn_p1_left      : in  std_logic;
       zn_p1_down      : in  std_logic;
@@ -301,10 +301,12 @@ entity psx_mister is
       zn_service      : in  std_logic;
       zn_test_mode    : in  std_logic;
       zn_dsw          : in  std_logic_vector(7 downto 0);
+      zn_cat702_key   : in  std_logic_vector(63 downto 0);
+      zn_cat702_key_b : in  std_logic_vector(63 downto 0);
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 mode
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type
-      -- EEPROM blank-image download (MRA ioctl index 9, all-FF) -> psx_top -> s11_io
+      -- EEPROM blank-image download (MRA ioctl index 9, all-FF) -> psx_top -> zn1_io
       ee_dl_wr        : in  std_logic := '0';
       ee_dl_addr      : in  std_logic_vector(9 downto 0) := (others => '0');
       ee_dl_data      : in  std_logic_vector(31 downto 0) := (others => '0');
@@ -721,7 +723,7 @@ begin
       Cheats_BusReadData    => Cheats_BusReadData,
       Cheats_BusDone        => Cheats_BusDone,
 
-      -- System 11 arcade I/O
+      -- ZN-1 Arcade I/O
       zn_p1_right     => zn_p1_right,
       zn_p1_left      => zn_p1_left,
       zn_p1_down      => zn_p1_down,
@@ -739,6 +741,8 @@ begin
       zn_service      => zn_service,
       zn_test_mode    => zn_test_mode,
       zn_dsw          => zn_dsw,
+      zn_cat702_key   => zn_cat702_key,
+      zn_cat702_key_b => zn_cat702_key_b,
       zn_platform     => zn_platform,
       zn_system11     => zn_system11,
       keycus_id       => keycus_id,

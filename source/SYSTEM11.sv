@@ -574,7 +574,7 @@ end
 reg        wave_download       = 0;
 // EEPROM blank-image (all-FF) download: MRA index 9 ships 4096 bytes -> 1024 words.
 // Writer packs 4 ioctl bytes into one 32-bit word at ioctl_addr[11:2] and issues an
-// ee_dl_wr into the s11_io EEPROM BRAM. Since the MRA ships all-FF, ee_dl_data is
+// ee_dl_wr into the zn1_io EEPROM BRAM. Since the MRA ships all-FF, ee_dl_data is
 // naturally 0xFFFFFFFF; we write it directly (no proprietary nvram data involved).
 reg        eeprom_download     = 0;
 reg        ee_dl_wr   = 0;
@@ -595,28 +595,47 @@ always @(posedge clk_1x) begin
 	sprog_download      <= ioctl_download & (ioctl_index == 6);  // System 11 C76 SPROG
 	wave_download       <= ioctl_download & (ioctl_index == 7);  // System 11 C352 wave ROM
 	c76bios_download    <= ioctl_download & (ioctl_index == 8);  // C76 internal BIOS (namcoc76.zip c76.bin) -> c76 BRAM
-	eeprom_download     <= ioctl_download & (ioctl_index == 9);  // EEPROM all-FF blank -> s11_io EEPROM BRAM
+	eeprom_download     <= ioctl_download & (ioctl_index == 9);  // EEPROM all-FF blank -> zn1_io EEPROM BRAM
 	code_download       <= ioctl_download & (ioctl_index == 255);
 end
 
-// Dynamic platform config (from MRA rom index 1).
-// System 11 protection is the KEYCUS C-chip (C406/C409/...), selected by zn_keycus_id
-// and implemented in s11_io. No security-key blobs are loaded and none ship in the
-// bitstream.
-reg [7:0]  zn_platform_r  = 8'h00;              // ioctl_index 1: platform byte. bit4=1 selects System 11. Low nibble is a legacy
-                                               // board id inherited from the PSX_MiSTer arcade lineage; System 11 MRAs use 0x14.
+// Dynamic platform config and CAT702 key loading (from MRA rom index 1/4/5)
+reg [7:0]  zn_platform_r  = 8'h00;              // ioctl_index 1: platform id (0=Visco, 1=Raizing, 2=Taito, 3=Atlus, 4=Tecmo)
 reg [7:0]  zn_keycus_id   = 8'h00;              // ioctl_index 1 byte[1]: KEYCUS type (0=none/Tekken1, 1=C406/Tekken2)
+// CAT702 security keys — NO baked-in key data (blank default, all zero).
+// System 11 (Tekken/Soul Edge/etc.) does NOT use CAT702 at all — its protection
+// is the KEYCUS C-chip (C406/C409), handled via zn_keycus_id. CAT702 is a ZN-1
+// feature inherited from the ZN-1 base; ZN-1 game MRAs load the real 8-byte keys
+// at runtime from their own ROM zips (index 4 = motherboard/KN01, index 5 =
+// game/KN02, e.g. coh1002e.zip:et01.ic652). Nothing manufacturer-derived ships
+// in the bitstream; keys come only from the game/BIOS zip the user provides.
+reg [63:0] zn_cat702_key_a  = 64'h0;
+reg [63:0] zn_cat702_key_b_r = 64'h0;
 
 always @(posedge clk_1x) begin
 	if (ioctl_wr) begin
 		if (ioctl_index[5:0] == 1) begin
 			zn_platform_r <= ioctl_dout[7:0];
 			zn_keycus_id  <= ioctl_dout[15:8];   // 0 for old single-byte MRAs
+		end else if (ioctl_index[5:0] == 4) begin
+			case (ioctl_addr[2:1])
+				2'd0: zn_cat702_key_a[15:0]  <= ioctl_dout;
+				2'd1: zn_cat702_key_a[31:16] <= ioctl_dout;
+				2'd2: zn_cat702_key_a[47:32] <= ioctl_dout;
+				2'd3: zn_cat702_key_a[63:48] <= ioctl_dout;
+			endcase
+		end else if (ioctl_index[5:0] == 5) begin
+			case (ioctl_addr[2:1])
+				2'd0: zn_cat702_key_b_r[15:0]  <= ioctl_dout;
+				2'd1: zn_cat702_key_b_r[31:16] <= ioctl_dout;
+				2'd2: zn_cat702_key_b_r[47:32] <= ioctl_dout;
+				2'd3: zn_cat702_key_b_r[63:48] <= ioctl_dout;
+			endcase
 		end
 	end
 end
 
-// exe_download stub (unused on System 11, retained for save-state UI compatibility)
+// exe_download stub (unused in ZN, retained for save-state UI compatibility)
 wire exe_download = 1'b0;
 
 reg cart_loaded = 0;
@@ -628,10 +647,10 @@ reg [26:0] ramdownload_wraddr;
 reg [31:0] ramdownload_wrdata;
 reg        ramdownload_wr;
 
-// System 11 uses no CD
+// ZN uses no CD
 wire hasCD = 1'b0;
 
-// loadExe and EXE header fields unused on System 11 (no .EXE loading)
+// loadExe and EXE header fields unused in ZN (no .EXE loading)
 wire loadExe = 1'b0;
 wire [31:0] exe_initial_pc    = 32'h0;
 wire [31:0] exe_initial_gp    = 32'h0;
@@ -643,7 +662,7 @@ reg  [1:0] biosregion;
 wire [1:0] region_out;
 reg        isPal;
 
-// Namco System 11: NTSC-J (region JP)
+// ZN-1 Visco: NTSC-J (region JP)
 always @(posedge clk_1x) begin
    isPal     <= 1'b0;
    biosregion <= 2'b01;  // JP BIOS
@@ -657,7 +676,7 @@ always @(posedge clk_1x) begin
             ramdownload_wrdata[15:0] <= ioctl_dout;
             if (bios_download)
                // BIOS/program: SDRAM 0x400000 base (bit22, no overlap -> OR). ALWAYS
-               // 22-bit (4MB) offset: a <=512KB BIOS fits, and System 11's 4MB
+               // 22-bit (4MB) offset: the <=512KB ZN-1 BIOS fits, and System 11's 4MB
                // program needs it. CRITICAL: must NOT gate on zn_platform_r[4] here --
                // that flag is loaded from MRA index 1, which downloads AFTER the index-0
                // program, so it's still 0 during this download; gating truncated the
@@ -1301,7 +1320,7 @@ psx
    .DDRAM_DIN       (DDRAM_DIN       ),
    .DDRAM_BE        (DDRAM_BE        ),
    .DDRAM_WE        (DDRAM_WE        ),
-   // cd (unused on System 11)
+   // cd (unused in ZN)
    .region          (2'b01),    // JP
    .region_out      (region_out),
    .hasCD           (1'b0),
@@ -1324,7 +1343,7 @@ psx
    .spuram_ena      (spuram_ena      ),
    .spuram_dataRead (spuram_dataRead ),
    .spuram_done     (spuram_done     ),
-   // memcard (unused on System 11)
+   // memcard (unused in ZN)
    .memcard_changed (),
    .saving_memcard  (),
    .memcard1_load   (1'b0),
@@ -1484,7 +1503,7 @@ psx
    .Cheats_BusReadData(cheats_din),
    .Cheats_BusDone(sdramCh3_done),
 
-   // System 11 arcade I/O
+   // ZN-1 Arcade I/O
    .zn_p1_right   (joy[0]),
    .zn_p1_left    (joy[1]),
    .zn_p1_down    (joy[2]),
@@ -1502,6 +1521,10 @@ psx
    .zn_service    (status[95]),
    .zn_test_mode  (status[94]),
    .zn_dsw        (8'hFF),       // all DIP switches ON (normal/defaults)
+   // CAT702 keys loaded dynamically via MRA rom index 4 (key_a=KN01/motherboard) and 5 (key_b=KN02/game)
+   // CAT702 select is ACTIVE LOW: key_a used for 0x88 path (KN01), key_b used for 0x84 path (KN02)
+   .zn_cat702_key  (zn_cat702_key_a),
+   .zn_cat702_key_b(zn_cat702_key_b_r),
    .zn_platform    (zn_platform_r[3:0]),
    .zn_system11    (zn_platform_r[4]),   // MRA platform byte bit4 = Namco System 11 mode
    .keycus_id      (zn_keycus_id),       // MRA index-1 byte[1]: 0=none, 1=C406 (Tekken 2)

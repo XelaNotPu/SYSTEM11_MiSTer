@@ -44,7 +44,7 @@ entity c76_sound is
       bios_din   : in  std_logic_vector(7 downto 0) := (others => '0');
 
       -- MIPS-side mailbox access (16-bit word; matches MAME c76_shared uint16). The
-      -- C76 (port A) sees the same RAM as bytes. Asymmetric dpram. s11_io selects the
+      -- C76 (port A) sees the same RAM as bytes. Asymmetric dpram. zn1_io selects the
       -- exact shared word via addr (incl. bit 1) and the correct halfword data lane,
       -- so each MIPS access reads/writes exactly one 16-bit word here.
       mips_addr  : in  std_logic_vector(13 downto 0);   -- 16-bit word index into 16K-word (32 KB) shared RAM
