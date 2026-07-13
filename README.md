@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="art/XelaNotPu-LogoTransparent-GithubSocialCrop.png" alt="Break Thru MiSTer banner" width="100%">
+  <img src="art/XelaNotPu-LogoTransparent-GithubSocial.png" alt="SYSTEM11 MiSTer banner" width="100%">
 </p>
 
 # Namco System 11 for MiSTer — Release 2026-07-12
