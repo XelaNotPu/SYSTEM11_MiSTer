@@ -102,7 +102,7 @@ entity gpu is
       gpustat_out          : out std_logic_vector(31 downto 0) := (others => '0');
       fifoIn_empty_out     : out std_logic := '0';
 
-      -- expose drawingArea bottom Y + drawing offset Y (diagnostic hook)
+      -- build #172: expose drawingArea bottom Y + drawing offset Y for Raizing
       -- buffer-swap probe. drawingAreaBottom is 10 bits (0..1023). drawingOffsetY is
       -- 11-bit signed (-1024..1023) — psx_top can compare against 240.
       drawingAreaBottom_out : out std_logic_vector(9 downto 0) := (others => '0');

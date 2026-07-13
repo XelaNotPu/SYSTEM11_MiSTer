@@ -25,7 +25,7 @@ set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) irq.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) pJoypad.vhd ]
 # SYSTEM 11 LEAN: no memory cards, and System 11 inputs bypass SIO0 entirely
-# (direct arcade input ports -> s11_io; MAME shows Tekken never touches 0x1F801040).
+# (direct zn_p1_* ports -> zn1_io; MAME shows Tekken never touches 0x1F801040).
 # joypad_mem (memory-card SIO0 responder), joypad_pad and joypad (the PSX
 # controller-port state machine) are all removed from the build.
 # Restore: git checkout release/20260712 -- rtl/psx.qip rtl/psx_top.vhd
@@ -39,26 +39,28 @@ set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte_mac123
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte_UNRDivide.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) mdec.vhd ]
-# System 11: CD/XA path stripped. Arcade boards have no CD-ROM (game data
-# comes from banked ROM). Only the inert cd_top_stub is instantiated; the real
+# System11/ZN-1: CD/XA path stripped. Arcade boards have no CD-ROM (game data
+# comes from banked ROM). Only the inert cd_top_zn1stub is instantiated; the real
 # cd_top -> cd_xa -> cd_xa_zigzag island is removed from the build.
-set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cd_top_stub.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cd_top_zn1stub.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) memctrl.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) sio.vhd ]
 # System 11: PSX SPU stripped. MAME's namcos11 driver never instantiates the SPU
 # (audio is C352-only); no S11 game runs a PSX BIOS, so the BIOS SPU-readback test
+# (the ZN-1/DoA++ hang reason) does not apply. spu_zn1stub.vhd keeps the same `entity
 # spu` interface with SPUSTAT not-busy + SS echoes so the boot path never stalls.
 # Frees ~13 DSP + ~4k ALM. spu_ram/spu_gauss are unused by the stub -> dropped.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) spu_zn1stub.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) datacache.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) memorymux.vhd ]
-# System 11: no memory cards. Top-level memcard.vhd was already uninstantiated; removed.
+# System11/ZN-1: no memory cards. Top-level memcard.vhd was already uninstantiated; removed.
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) statemanager.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) savestates.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) psx_top.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) psx_mister.vhd ]
-set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) s11_io.vhd ]
-# EEPROM BRAM (s11_io) is now filled by MRA ioctl index 9 (all-FF blank) at load time.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) zn1_io.vhd ]
+# EEPROM BRAM (zn1_io) is now filled by MRA ioctl index 9 (all-FF blank) at load time.
 # No eeprom_ff.mif ships: no proprietary captured-nvram data in the repo or bitstream.
 # Namco System 11 sound subsystem (C76 M37702 CPU + C352 PCM chip)
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) m37702.vhd ]
@@ -68,4 +70,5 @@ set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) c76_sound.
 # (No c76.mif MIF_FILE: the C76 BIOS is loaded at runtime via MRA ioctl index 8
 #  into the ibiosram dpram (no init_file). No proprietary C76 BIOS in the repo
 #  or bitstream — the former dangling MIF_FILE assignment was removed.)
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) zn_sio.vhd ]
 
