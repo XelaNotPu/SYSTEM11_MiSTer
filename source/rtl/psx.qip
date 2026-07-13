@@ -1,0 +1,71 @@
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) dpram.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) RamMLAB.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) export.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) divider.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) pGPU.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) mul32u.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) mul9s.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cheats.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_fillVram.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_cpu2vram.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_vram2vram.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_vram2cpu.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_line.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_rect.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_poly.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_pixelpipeline.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_overlay.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_dither.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_videoout_async.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_videoout_sync.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_crosshair.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) justifier_sensor.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu_videoout.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gpu.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) irq.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) pJoypad.vhd ]
+# SYSTEM 11 LEAN: no memory cards, and System 11 inputs bypass SIO0 entirely
+# (direct arcade input ports -> s11_io; MAME shows Tekken never touches 0x1F801040).
+# joypad_mem (memory-card SIO0 responder), joypad_pad and joypad (the PSX
+# controller-port state machine) are all removed from the build.
+# Restore: git checkout release/20260712 -- rtl/psx.qip rtl/psx_top.vhd
+# pJoypad.vhd is KEPT: it declares joypad_t, still used by psx_top's ports.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) timer.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) dma.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) exp2.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) pGTE.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte_mac0.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte_mac123.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte_UNRDivide.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) gte.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) mdec.vhd ]
+# System 11: CD/XA path stripped. Arcade boards have no CD-ROM (game data
+# comes from banked ROM). Only the inert cd_top_stub is instantiated; the real
+# cd_top -> cd_xa -> cd_xa_zigzag island is removed from the build.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cd_top_stub.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) memctrl.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) sio.vhd ]
+# System 11: PSX SPU stripped. MAME's namcos11 driver never instantiates the SPU
+# (audio is C352-only); no S11 game runs a PSX BIOS, so the BIOS SPU-readback test
+# spu` interface with SPUSTAT not-busy + SS echoes so the boot path never stalls.
+# Frees ~13 DSP + ~4k ALM. spu_ram/spu_gauss are unused by the stub -> dropped.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) datacache.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) cpu.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) memorymux.vhd ]
+# System 11: no memory cards. Top-level memcard.vhd was already uninstantiated; removed.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) statemanager.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) savestates.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) psx_top.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) psx_mister.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) s11_io.vhd ]
+# EEPROM BRAM (s11_io) is now filled by MRA ioctl index 9 (all-FF blank) at load time.
+# No eeprom_ff.mif ships: no proprietary captured-nvram data in the repo or bitstream.
+# Namco System 11 sound subsystem (C76 M37702 CPU + C352 PCM chip)
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) m37702.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) c352.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) c76.vhd ]
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) c76_sound.vhd ]
+# (No c76.mif MIF_FILE: the C76 BIOS is loaded at runtime via MRA ioctl index 8
+#  into the ibiosram dpram (no init_file). No proprietary C76 BIOS in the repo
+#  or bitstream — the former dangling MIF_FILE assignment was removed.)
+
