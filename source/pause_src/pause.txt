@@ -1,0 +1,19 @@
+
+---  RESPECT  ---
+
+ wxwl         hkamania
+ atrac17      pr4mod
+ Darren O     FPGAzumSpass
+ Wickerwaka   Jotego
+ Blackwine    NullObject
+ SRG320       Kintrix
+
+
+---  GREETINGS  ---
+
+ To the MiSTer FPGA community:
+ preservation crews, core devs,
+ testers, doc writers, hardware
+ tinkerers, scanline obsessives,
+ CRT loyalists, JAMMA hoarders...
+
