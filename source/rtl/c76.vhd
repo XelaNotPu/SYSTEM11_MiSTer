@@ -44,6 +44,9 @@ entity c76 is
       irq2       : in  std_logic;
 
       -- 2026-07-06: analog inputs (Tekken P1 kicks ride ADC ch1/ch2; idle = 0xFF)
+      -- 2026-07-13: AN0 added — Pocket Racer's steering wheel (PADDLE, centre 0x80,
+      -- legal range 0x38-0xC8 per MAME); AN1 doubles as its pedal (idle 0x00).
+      in_adc0    : in  std_logic_vector(7 downto 0) := x"FF";
       in_adc1    : in  std_logic_vector(7 downto 0) := x"FF";
       in_adc2    : in  std_logic_vector(7 downto 0) := x"FF";
 
@@ -265,7 +268,8 @@ begin
    sfr_idx <= to_integer(unsigned(cpu_addr(6 downto 0)));
    -- A/D result regs: ADi low byte at 0x20+2i (8-bit conversions). Tekken: ch1 = P1
    -- BTN4/right kick, ch2 = P1 BTN3/left kick (MAME tekken INPUT_PORTS); rest idle 0xFF.
-   sfr_q   <= in_adc1 when (unsigned(cpu_addr(7 downto 0)) = x"22")
+   sfr_q   <= in_adc0 when (unsigned(cpu_addr(7 downto 0)) = x"20")
+              else in_adc1 when (unsigned(cpu_addr(7 downto 0)) = x"22")
               else in_adc2 when (unsigned(cpu_addr(7 downto 0)) = x"24")
               else x"FF" when (unsigned(cpu_addr(7 downto 0)) >= x"20" and unsigned(cpu_addr(7 downto 0)) <= x"2F")
               -- 2026-07-06 MUSIC-TEMPO FIX: timer COUNTER reads must return the LIVE down-count

@@ -547,8 +547,11 @@ hps_ext hps_ext
 localparam BIOS_START      = 27'h0400000;
 localparam FIXEDROM_START  = 27'h0480000;
 localparam BANKEDROM_START = 27'h0800000;
-localparam SPROG_START     = 27'h1800000;  // System 11 C76 SPROG (256KB), after banked ROM
-localparam WAVE_START      = 27'h1840000;  // System 11 C352 wave ROM (2MB), after SPROG
+// SPROG/WAVE sit above the largest System 11 banked ROM (rom8_64 = 32MB ends at
+// 0x2800000 exactly). Old bases 0x1800000/0x1840000 collided with banked ROMs
+// >16MB (My Angel 3). Wave ends at 0x2C40000 -> needs a >=64MB SDRAM module.
+localparam SPROG_START     = 27'h2800000;  // System 11 C76 SPROG (256KB), after banked ROM
+localparam WAVE_START      = 27'h2840000;  // System 11 C352 wave ROM (up to 4MB), after SPROG
 
 reg bios_download, fixedrom_download, bankedrom_download, code_download, sprog_download;
 reg c76bios_download;
@@ -686,10 +689,10 @@ always @(posedge clk_1x) begin
                // Fixed ROM: SDRAM 0x480000 base (addition to handle overlapping bits)
                ramdownload_wraddr <= FIXEDROM_START[26:0] + {4'b0000, ioctl_addr[22:0]};
             else if (sprog_download)
-               // System 11 C76 SPROG: SDRAM 0x1800000 base, 256KB (bit24/23, no overlap -> OR)
+               // System 11 C76 SPROG: SDRAM 0x2800000 base, 256KB (bits 25/23, no overlap -> OR)
                ramdownload_wraddr <= SPROG_START[26:0] | {9'b0, ioctl_addr[17:0]};
             else if (wave_download)
-               // System 11 C352 wave ROM: SDRAM 0x1840000 base, up to 4MB (base bit18 set -> ADD)
+               // System 11 C352 wave ROM: SDRAM 0x2840000 base, up to 4MB (base bit18 set -> ADD)
                ramdownload_wraddr <= WAVE_START[26:0] + {5'b0, ioctl_addr[21:0]};
             else
                // Banked ROM: SDRAM 0x800000 base, 24 banks × 1MB = 24MB
@@ -1050,6 +1053,11 @@ wire        wave_ch3_own    = c76_wave_req | (wave_st == 2'd1);
 reg         c76_ever_sprog      = 1'b0;        // diag: C76 ever requested a SPROG read (=C76 running)
 reg         c76_sprog_done_ever = 1'b0;        // diag: a ch3 SPROG read ever completed
 
+// Pocket Racer steering source: left-stick X, or the paddle when paddleMode is on
+// (joy0_xmuxed already handles that mux). Signed -128..127; half-scaled and reversed
+// into the wheel's 0x41-0xC0 span (inside MAME's legal 0x38-0xC8).
+wire signed [7:0] prc_stick = joy0_xmuxed;
+
 c76_sound c76snd
 (
    .clk(clk_1x), .ce(c76_ce), .reset(reset), .sample_ce(snd_sample_ce),
@@ -1065,8 +1073,16 @@ c76_sound c76snd
    .in_player2(~{joy2[10], 1'b0, joy2[5], joy2[4], joy2[3], joy2[2], joy2[1], joy2[0]}),
    .in_player4(~{2'b00, joy2[7], joy2[6], 4'b0000}),
    .in_switch (~{status[95], status[94], joy[11], joy2[11], 2'b00, status[96], status[97]}),
-   .in_adc1   (joy[7] ? 8'h00 : 8'hFF),   // P1 BTN4 (right kick) — analog, active low
-   .in_adc2   (joy[6] ? 8'h00 : 8'hFF),   // P1 BTN3 (left kick)
+   // Pocket Racer (KEYCUS C432): AN0 = steering (PADDLE centre 0x80, legal 0x38-0xC8,
+   // reversed per MAME) from the left analog stick X, AN1 = throttle pedal (0x00
+   // released, BTN1 = full). AN0 left at the 0xFF idle value reads as a wheel pegged
+   // past its legal max -> the C76 flags a fault at shram 0xBD32 and the game never
+   // boots. All other games keep the Tekken kick mapping on AN1/AN2 and 0xFF on AN0.
+   .in_adc0   ((zn_keycus_id == 8'h07) ? (8'h80 - {prc_stick[7], prc_stick[7:1]}) : 8'hFF),
+   .in_adc1   ((zn_keycus_id == 8'h07) ? (joy[4] ? 8'h7F : 8'h00)
+                                       : (joy[7] ? 8'h00 : 8'hFF)),   // P1 BTN4 (right kick) — analog, active low
+   .in_adc2   ((zn_keycus_id == 8'h07) ? 8'hFF
+                                       : (joy[6] ? 8'h00 : 8'hFF)),   // P1 BTN3 (left kick)
    .sprog_addr(c76_sprog_addr), .sprog_data(c76_sprog_data), .sprog_rd(c76_sprog_rd), .sprog_ready(c76_sprog_ready),
    .wave_addr(c76_wave_addr), .wave_data(c76_wave_data), .wave_rd(c76_wave_rd), .wave_ready(c76_wave_ready),
    .dbg_c352_wrcnt(c352_wrcnt), .dbg_keyon_cnt(c352_keyoncnt),
@@ -1714,7 +1730,7 @@ end
 //   is the Tekken 2 texture instrument — restore it on the T2 branch:
 //     git checkout release/20260712~1 -- SYSTEM11.sv
 wire [31:0] jtag_probe = (jtag_addr[31:28]==4'd1) ? 32'h0BADC0DE :   // mode 1 retired (VRAM readback)
-                         (jtag_addr[31:28]==4'd2) ? 32'h0BADC0DE :   // mode 2 retired (live MIPS PC)
+                         (jtag_addr[31:28]==4'd2) ? zn_dbg_mipspc :  // mode 2 RESTORED 2026-07-13: live MIPS PC (title bring-up triage; port was still wired)
                          (jtag_addr[31:28]==4'd3) ? 32'h0BADC0DE :   // mode 3 retired (SDRAM ch1/FSM counters)
                          (jtag_addr[31:28]==4'd4) ? 32'h0BADC0DE :   // mode 4 retired (pause/ce forensics)
                          (jtag_addr[31:28]==4'd5) ? snd_triage :     // mode 5 KEPT: sound triage (c76stat.tcl)

@@ -2,35 +2,60 @@
   <img src="art/XelaNotPu-LogoTransparent-GithubSocial.png" alt="SYSTEM11 MiSTer banner" width="100%">
 </p>
 
-# Namco System 11 for MiSTer — Release 2026-07-12
+# Namco System 11 for MiSTer — Release 2026-07-13
+
+Nine playable System 11 titles — seven newly supported since the 2026-07-12
+release, driven by four core fixes: per-game GPU type selection, the missing
+M37702 `JML` opcode, all eight KEYCUS protection chips, and a SIO0 register
+stub (plus 32 MB rom8_64 banking for My Angel 3).
 
 ## Supported games
 
 | Game | Set | Status |
 |---|---|---|
-| **Tekken** (1994) | World, TE2/VER.C | Playable — plus three regional alternates |
-| **Tekken 2 Ver.B** (1995) | World, TES2/VER.B | Playable |
+| **Tekken** (1994) | World, TE2/VER.C | Playable — verified gameplay, sound, inputs |
+| **Tekken 2 Ver.B** (1996) | World, TES2/VER.D | Playable — the final revision; VER.B (gameplay-verified) and six more revisions ship as alternates |
+| **Soul Edge Ver. II** (1996) | Asia, SO4/VER.C | New — boots, attract mode renders |
+| **Dunk Mania** (1995) | World, DM2/VER.C | New — boots, attract mode renders (slow first boot, ~2 min) |
+| **Xevious 3D/G** (1995) | World, XV32/VER.B | New — boots, attract mode renders |
+| **Prime Goal EX** (1996) | Japan, PG1/VER.A | New — boots, attract mode renders |
+| **Dancing Eyes** (1996) | World, DC2/VER.B | New — boots, attract mode renders |
+| **Pocket Racer** (1996) | Japan, PKR1/VER.B | **Not working** — C76 handshake blocks boot, under investigation |
+| **Star Sweep** (1997) | World, STP2/VER.A | New — boots, attract mode renders |
+| **Kosodate Quiz My Angel 3** (1998) | Japan, KQT1/VER.A | New — boots, attract mode renders (first title using 32 MB rom8_64 banking) |
+| **Point Blank 2** (1999) | World, GNB2/VER.A | **Untested** — MRAs provided; needs a lightgun, which the core does not implement yet |
+| **Family Bowl** (1997) | Japan, FB1/VER.A | **Not working** — needs an H8/3002 sub-board that is not emulated (not working in MAME either) |
 
-Only the two sets above are verified on hardware. **Other Tekken 2 revisions are
-not included** — they are untested and some exhibit texture corruption that is
-still under investigation. The remaining System 11 titles (Soul Edge, Xevious
-3D/G, Dancing Eyes, Dunk Mania, Prime Goal EX, Star Sweep, Pocket Racer,
-My Angel 3, Point Blank 2) are **not** supported in this build.
+The seven new titles are verified to boot and render their attract sequences on
+hardware; gameplay, sound and input depth-testing at the level done for the two
+Tekkens is still in progress.
+
+**Full region coverage**: every System 11 romset known to MAME has an MRA in
+this release — one primary per game in `_Arcade/`, with regional/revision
+alternates under `_Arcade/_alternatives/_<Game>/`. All eight Tekken 2 revisions
+were boot-tested on hardware. The **alternate sets of the seven new titles**
+(Soul Edge, Xevious 3D/G, Dancing Eyes, Dunk Mania, Star Sweep regions) are
+generated from MAME ROM definitions but have **not** been individually
+boot-tested.
 
 ## Contents
 
 ```
-RELEASE-20260712/
+RELEASE-20260713/
 ├── release/                       ← copy onto your MiSTer SD card
 │   └── _Arcade/
-│       ├── Tekken (World TE2 Ver.C).mra              ← Tekken (World, TE2/VER.C)
-│       ├── Tekken 2 Ver.B (World TES2 Ver.B).mra     ← Tekken 2 Ver.B (World, TES2/VER.B)
-│       ├── _alternatives/                            ← other Tekken regions/revisions
-│       │   ├── Tekken (World TE2 Ver.B).mra
-│       │   ├── Tekken (Asia TE4 Ver.C).mra
-│       │   └── Tekken (Japan TE1 Ver.B).mra
+│       ├── <one primary .mra per game (12 games)>
+│       ├── _alternatives/
+│       │   ├── _Tekken/           ← World VER.B, Asia VER.C, Japan VER.B
+│       │   ├── _Tekken 2/         ← the other 7 revisions (incl. gameplay-verified World TES2-VER.B)
+│       │   ├── _Soul Edge/        ← US VER.C, World/US/Japan VER.A
+│       │   ├── _Dunk Mania/       ← Japan DM1-VER.C
+│       │   ├── _Xevious 3D-G/     ← World VER.A, Japan XV31-VER.A
+│       │   ├── _Dancing Eyes/     ← US DC3-VER.C, Japan DC1-VER.A
+│       │   ├── _Star Sweep/       ← Japan STP1-VER.A
+│       │   └── _Point Blank 2/    ← World alt sets, US GNB3-VER.A, Gunbarl (Japan)
 │       └── cores/
-│           └── XNSYSTEM11_20260712.rbf   ← the FPGA core bitstream
+│           └── XNSYSTEM11_20260713.rbf   ← the FPGA core bitstream
 └── source/                        ← full FPGA core source (build it yourself)
 ```
 
@@ -40,89 +65,95 @@ RELEASE-20260712/
    (merging with what is already there).
 2. Place your own ROM zips in the MiSTer arcade ROM location
    (`games/mame/` or `_Arcade/mame/`).
-3. Select **Tekken** or **Tekken 2** from the arcade menu.
+3. Select a game from the arcade menu.
 
-### Required ROM zips (you must supply these)
+If you installed RELEASE-20260712, the new core and MRAs coexist with it;
+the `.mra` files reference the core as `XNSYSTEM11` and MiSTer picks the
+newest dated `XNSYSTEM11_*.rbf` in `_Arcade/cores/`.
 
-The `.mra` files reference standard MAME romsets **by name** — no game data is
-included in this release. You must provide these, from ROM images you legally own.
+## Hardware requirements
 
-#### Always required (every `.mra`, including the alternates)
+A MiSTer with a **64 MB (or larger) SDRAM module** is required — up from
+32 MB in the previous release. The rom8_64 banking support moved the C76
+sound program and C352 wave data above the 40 MB mark for **all** titles.
+With a 32 MB module the games will run silent at best.
 
-**`tekken.zip`** — the parent romset (World, TE2/VER.C). The regional alternates
-only carry their own unique program ROMs and fall back to this parent for
-everything else, so **`tekken.zip` is required even when running an alternate.**
+## ROM zips required
 
-| ROM file(s) | What it is |
+No ROMs are included. Each MRA references MAME romsets by zip name;
+`namcoc76.zip` (the C76 sound-CPU BIOS, loaded at runtime) is needed by
+**every** MRA.
+
+| Game (primary MRA) | Zips |
 |---|---|
-| `te2verc.2l`, `te2verc.2j`, `te1verb.2k`, `te1verb.2f` | Main program (interleaved) |
-| `te1rom0l.ic5`, `te1rom0u.ic6`, `te1rom1l.ic3`, `te1rom1u.ic8`, `te1rom2l.ic4`, `te1rom2u.ic7` | Banked graphics/data ROMs |
-| `te1sprog.6d` | C76 sound program |
-| `te1wave.8k` | C352 PCM / wave data |
+| Tekken | `tekken.zip` + `namcoc76.zip` |
+| Tekken 2 Ver.B | `tekken2b.zip` (or merged `tekken2.zip`) + `namcoc76.zip` |
+| Soul Edge Ver. II | `souledge.zip` + `namcoc76.zip` |
+| Dunk Mania | `dunkmnia.zip` + `namcoc76.zip` |
+| Xevious 3D/G | `xevi3dg.zip` + `namcoc76.zip` |
+| Prime Goal EX | `primglex.zip` + `namcoc76.zip` |
+| Dancing Eyes | `danceyes.zip` + `namcoc76.zip` |
+| Star Sweep | `starswep.zip` + `namcoc76.zip` |
+| My Angel 3 | `myangel3.zip` + `namcoc76.zip` |
+| Pocket Racer | `pocketrc.zip` + `namcoc76.zip` |
+| Point Blank 2 | `ptblank2a.zip` (or merged `ptblank2.zip`) + `namcoc76.zip` |
+| Family Bowl | `fambowl.zip` + `namcoc76.zip` |
 
-**`namcoc76.zip`** — Namco C76 (M37702) sound-CPU BIOS
+Alternates: each alternate MRA declares its own clone zip with a fallback to
+the parent (e.g. `souledgeja.zip|souledge.zip`), so a **merged parent zip
+satisfies every alternate of that game**. Clone zips from split/merged sets
+contain only the ROMs that differ — keep the parent zip alongside them.
 
-| ROM file | What it is |
-|---|---|
-| `c76.bin` | C76 MCU internal BIOS (loaded at runtime, not embedded in the core) |
+## Known issues
 
-#### Additional zip per alternate
-
-Each alternate in `_alternatives/` needs **one** extra zip, which supplies only
-its unique main-program ROMs — the banked ROMs, sound program, and wave data all
-come from `tekken.zip`:
-
-| `.mra` | Additional zip | Unique ROMs it must contain |
-|---|---|---|
-| `Tekken (World TE2 Ver.B)` | `tekkenb.zip` | `te2verb.2l`, `te2verb.2j` |
-| `Tekken (Asia TE4 Ver.C)` | `tekkenac.zip` | `te4verc.2l`, `te4verc.2j` |
-| `Tekken (Japan TE1 Ver.B)` | `tekkenjb.zip` | `te1verb.2l`, `te1verb.2j` |
-
-#### Tekken 2 Ver.B (World, TES2/VER.B)
-
-`Tekken 2 Ver.B (World TES2 Ver.B).mra` needs **`tekken2b.zip`** (plus `namcoc76.zip`).
-Tekken 2 uses its own `tes*` ROMs — none are shared with Tekken 1 — and has
-**eight** banked ROMs rather than six.
-
-| ROM file(s) | What it is |
-|---|---|
-| `tes2verb.2l`, `tes2verb.2j`, `tes1verb.2k`, `tes1verb.2f` | Main program (interleaved) |
-| `tes1rom0l.ic6`, `tes1rom0u.ic5`, `tes1rom1l.ic8`, `tes1rom1u.ic3`, `tes1rom2l.ic7`, `tes1rom2u.ic4`, `tes1rom3l.ic9`, `tes1rom3u.ic1` | Banked graphics/data ROMs |
-| `tes1sprog.6d` | C76 sound program |
-| `tes1wave.8k` | C352 PCM / wave data |
-
-As with the Tekken alternates, this MRA declares its zip as
-`tekken2b.zip|tekken2.zip` — so if you have a *split/merged* clone set, keep the
-Tekken 2 parent **`tekken2.zip`** alongside it, since a merged `tekken2b.zip`
-carries only the ROMs that differ from the parent.
-
-#### Summary — the complete set of zips
-
-| Zip | Needed for |
-|---|---|
-| `namcoc76.zip` | **every** MRA (Tekken *and* Tekken 2) |
-| `tekken.zip` | all Tekken MRAs (world release + every alternate) |
-| `tekkenb.zip` | only `Tekken (World TE2 Ver.B)` |
-| `tekkenac.zip` | only `Tekken (Asia TE4 Ver.C)` |
-| `tekkenjb.zip` | only `Tekken (Japan TE1 Ver.B)` |
-| `tekken2b.zip` | only `Tekken 2 Ver.B (World TES2 Ver.B)` |
-| `tekken2.zip` | fallback for `tekken2b.zip` if you use split/merged sets |
-
-Minimum to play **Tekken**: `tekken.zip` + `namcoc76.zip`.
-Minimum to play **Tekken 2**: `tekken2b.zip` + `namcoc76.zip`.
+- **Long-session display blank (under investigation).** In extended soak
+  testing, one build blanked its video output after ~100 minutes of
+  continuous attract mode while the game itself kept running (sound and
+  inputs stay alive; the OSD still works). Reloading the core restores the
+  picture. The root cause is being investigated; short and medium play
+  sessions are unaffected in testing.
+- **Dunk Mania boots slowly** (~2 minutes to first picture on a fresh
+  EEPROM). This matches its first-boot initialization; subsequent boots are
+  faster.
+- **New titles are attract-verified.** Gameplay/sound/input verification at
+  full depth exists for Tekken and Tekken 2; the seven new titles have been
+  verified to boot, pass their protection checks, and render attract mode.
+- **Pocket Racer** does not boot yet: the MIPS waits on a C76 shared-RAM
+  handshake that never completes. Its MRA is included for completeness. The
+  analog wheel plumbing (steering on the left stick / paddle, pedal on
+  Button 1) is already in the core for when the handshake issue is resolved.
+- **Point Blank 2 / Gunbarl** MRAs are provided untested: the core has no
+  lightgun support yet, and these sets were not boot-tested.
+- **Family Bowl** does not work (unemulated H8/3002 sub-board; not working
+  in MAME either). Its MRA is included for completeness only.
+- **Sound fidelity** continues to be tuned against real hardware.
 
 ## No copyrighted data
 
 This release contains **no game ROMs and no copyrighted game data**:
 
-- The core bitstream (`XNSYSTEM11_20260712.rbf`) embeds no BIOS, no sound program, no PCM
-  data, and no captured nvram. The C76 sound-CPU BIOS is loaded at runtime from
-  `namcoc76.zip`; the EEPROM initialises blank (all-`FF`) and self-configures.
-- The `.mra` files reference romsets by name only — they contain no inline ROM
-  data.
-- The `source/` tree contains the original FPGA logic, standard PSX_MiSTer base
-  RTL, hardware algorithm tables, and seperate pause-overlay artwork
-- no game/BIOS/firmware images.
+- The core bitstream (`XNSYSTEM11_20260713.rbf`) embeds no BIOS, no sound
+  program, no PCM data, and no captured nvram. The C76 sound-CPU BIOS is
+  loaded at runtime from `namcoc76.zip`; the EEPROM initialises blank
+  (all-`FF`) and self-configures.
+- The `.mra` files reference romsets by name only — they contain no inline
+  ROM data.
+- The `source/` tree contains the original FPGA logic, standard PSX_MiSTer
+  base RTL, hardware algorithm tables, and the author's own pause-overlay
+  artwork — no game/BIOS/firmware images.
+
+## License
+
+The core and its source are Free Software, conveyed under the **GNU General
+Public License v3 or later** (the tree mixes GPLv2-or-later and GPLv3-or-later
+files, so the combination is GPLv3+; every file remains available under the
+terms in its own header). Full texts ship in `source/COPYING.GPL2` and
+`source/COPYING.GPL3`, with the reasoning in `source/LICENSE`.
+
+This core derives from **PSX_MiSTer** by Robert Peip (FPGAzumSpass) and the
+**MiSTer framework**; the System 11 hardware (C76, C352, KEYCUS, ROM banking)
+is an independent re-implementation developed with reference to the MAME
+project's hardware documentation.
 
 See `source/README.md` for the full legal notice, credits, trademark and
 security-chip (KEYCUS) attribution, and build instructions.

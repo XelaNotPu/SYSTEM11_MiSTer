@@ -51,7 +51,13 @@ set_global_assignment -name ECO_OPTIMIZE_TIMING ON
 set_global_assignment -name PERIPHERY_TO_CORE_PLACEMENT_AND_ROUTING_OPTIMIZATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING OFF
 set_global_assignment -name ALM_REGISTER_PACKING_EFFORT LOW
-set_global_assignment -name PLACEMENT_EFFORT_MULTIPLIER 1.0
+# 2026-07-13 seed-reliability: higher place/route effort + routability focus for the
+# routing-bound core-clk->SDRAM_A crossing (works with the 0.400 SDC over-constraint).
+# NOTE: plain fitter settings only — PHYSICAL_SYNTHESIS_* is rejected by 17.0 Lite and
+# makes Quartus silently REWRITE this file (verified 2026-07-12); do not add it.
+set_global_assignment -name PLACEMENT_EFFORT_MULTIPLIER 2.0
+set_global_assignment -name ROUTER_TIMING_OPTIMIZATION_LEVEL MAXIMUM
+set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS
 
 set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
 
@@ -59,10 +65,10 @@ set_global_assignment -name VERILOG_MACRO "MISTER_FB=1"
 set_global_assignment -name VERILOG_MACRO "MISTER_DOWNSCALE_NN=1"
 
 # disable adaptive scanline filtering
-#set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ADAPTIVE=1"
+set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ADAPTIVE=1"
 
 # Disable YC / Composite output to save some resources
-#set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
+set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
 
 # Disable ALSA audio output to save some resources
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
@@ -308,4 +314,4 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SDIO_DAT[*]
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SD_SPI*
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to USER_IO[*]
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to VGA_EN
-set_global_assignment -name SEED 13
+set_global_assignment -name SEED 34

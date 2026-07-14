@@ -80,13 +80,23 @@ entity zn1_io is
       -- Tecmo/ZN-1 map: shared-RAM mailbox @0x1FA04000, bank reg @0x1FA10020,
       -- KEYCUS @0x1FA20000 (Tekken = none), EEPROM @0x1FA30000.
       zn_system11  : in  std_logic := '0';
-      -- KEYCUS type from the MRA (ioctl index 1, byte[1]): 0=none (Tekken 1),
-      -- 1=C406 (Tekken 2). Others (C409 Soul Edge, ...) slot in as cases below.
+      -- KEYCUS type from the MRA (ioctl index 1, byte[1]). Algorithms ported from MAME
+      -- src/mame/namco/ns11prot.cpp:
+      --   0 = none (Tekken 1)          5 = C430 (Xevious 3D/G)
+      --   1 = C406 (Tekken 2)          6 = C431 (Dancing Eyes)
+      --   2 = C409 (Soul Edge)         7 = C432 (Pocket Racer)
+      --   3 = C410 (Dunk Mania)        8 = C442 (Star Sweep)
+      --   4 = C411 (Prime Goal EX)     9 = C443 (My Angel 3 / Point Blank 2)
       keycus_id    : in  std_logic_vector(7 downto 0) := x"00";
-      -- 8 independent 1 MB bank windows (0x1F000000..0x1F700000). Each nibble w
-      -- is the 4-bit page (0-15) selected for window w from the 16 MB banked ROM.
-      -- Written via 0x1FA10020+2*w; entry = ((d&0xC0)>>4)+(d&0x03) = d[7:6]&d[1:0].
-      s11_bank     : out std_logic_vector(31 downto 0) := (others => '0');
+      -- 8 independent 1 MB bank windows (0x1F000000..0x1F700000). Each 5-bit field w
+      -- is the page (0-31) selected for window w from the banked ROM.
+      -- rom8 (default):        entry = ((d&0xC0)>>4)+(d&0x03) = d[7:6]&d[1:0] (16MB max)
+      -- rom8_64 (keycus C443): entry = (d[7:6]&d[2:0]) XOR (s11_up ? 16 : 0)  (32MB max)
+      -- Written via 0x1FA10020+2*w. The XOR is applied AT WRITE TIME (MAME set_entry
+      -- semantics): a later upper-latch change does not remap already-set windows.
+      s11_bank     : out std_logic_vector(39 downto 0) := (others => '0');
+      -- rom8_64 upper-16MB latch, held by memorymux (written at 0x1F080000/2)
+      s11_up       : in  std_logic := '0';
       -- C76 shared-RAM mailbox, MIPS side (16-bit words; 16K words = 32 KB)
       mb_addr      : out std_logic_vector(13 downto 0) := (others => '0');
       mb_wdata     : out std_logic_vector(15 downto 0) := (others => '0');
@@ -116,13 +126,18 @@ end entity;
 
 architecture arch of zn1_io is
 
+   -- Keep the KEYCUS arithmetic (C409) out of the DSP blocks: the design is DSP-critical,
+   -- and the operands are tiny (5x5), so LUTs are the cheaper home for them.
+   attribute multstyle : string;
+   attribute multstyle of arch : architecture is "logic";
+
    signal sec_sel_r : std_logic_vector(2 downto 0) := "000";  -- default: 0 (nothing selected)
    signal coin_r    : std_logic_vector(7 downto 0) := x"FF";
    -- build #117b: store the full znsecsel byte for verifiable readback (MAME returns whatever
    -- was written). Without this, Taito BIOS write-verifies znsecsel and sees a mismatch.
    signal znsecsel_byte : std_logic_vector(7 downto 0) := x"00";
    -- System 11: register file for the 8 bank-window page selectors (8x 4-bit).
-   signal s11_bank_r : std_logic_vector(31 downto 0) := (others => '0');
+   signal s11_bank_r : std_logic_vector(39 downto 0) := (others => '0');
    -- DIAG 2026-07-06 bank-write arrival probe
    signal bankwr_cnt  : unsigned(3 downto 0) := (others => '0');
    signal wr16_cnt    : unsigned(3 downto 0) := (others => '0');
@@ -176,6 +191,51 @@ architecture arch of zn1_io is
       v(8)  := not btn(4);
       v(9)  := not btn(5);
       return v;
+   end function;
+
+   -- ==== KEYCUS helpers ====
+   -- Several System 11 KEYCUS chips answer with the DECIMAL digits of a 16-bit value
+   -- (MAME ns11prot.cpp: "( value / 100 ) % 10" etc). kc_digits(k) = (value / 10**k) % 10.
+   -- Implemented as a combinational double-dabble (no dividers, no DSP). One instance is
+   -- shared by every chip: the per-chip value is muxed into it before the call.
+   type bcd_digits_t is array(0 to 4) of unsigned(3 downto 0);
+
+   function to_bcd(v : unsigned(15 downto 0)) return bcd_digits_t is
+      variable d   : bcd_digits_t := (others => (others => '0'));
+      variable c   : std_logic;
+      variable t   : unsigned(4 downto 0);
+   begin
+      for i in 15 downto 0 loop
+         -- add-3 on any digit >= 5, then shift the next source bit in at the bottom
+         for k in 0 to 4 loop
+            if d(k) > 4 then
+               d(k) := d(k) + 3;
+            end if;
+         end loop;
+         c := v(i);
+         for k in 0 to 4 loop
+            t    := d(k) & c;
+            d(k) := t(3 downto 0);
+            c    := t(4);
+         end loop;
+      end loop;
+      return d;
+   end function;
+
+   -- C409 (Soul Edge) colour interpolation, one 5-bit channel (MAME keycus_c409_device::read):
+   --   chan = ((v2 * a2) + (v3 * a3)) / 0x1f
+   -- a2 = (p1-1) & 0x1f and a3 = (0x20-p1) & 0x1f always sum to exactly 31, so the numerator
+   -- is bounded by 31*31 = 961. Divide-by-31 is therefore an exact reciprocal multiply:
+   --   floor(n/31) = (n * 2115) >> 16  for all n <= 961   (verified exhaustively)
+   -- and 2115 = 2048 + 64 + 2 + 1, i.e. three shift-adds — no divider, no multiplier.
+   function c409_chan(v2, v3, a2, a3 : unsigned(4 downto 0)) return unsigned is
+      variable num  : unsigned(10 downto 0);
+      variable prod : unsigned(22 downto 0);
+   begin
+      num  := resize(v2 * a2, 11) + resize(v3 * a3, 11);          -- <= 961
+      prod := shift_left(resize(num, 23), 11) + shift_left(resize(num, 23), 6)
+              + shift_left(resize(num, 23), 1) + resize(num, 23); -- num * 2115
+      return resize(shift_right(prod, 16), 5);
    end function;
 
    -- Board config register value (matches MAME zn_state::boardconfig_r):
@@ -373,6 +433,13 @@ begin
    process(clk)
       variable p1_v, p2_v, svc_v, sys_v : std_logic_vector(31 downto 0);
       variable bank_w : integer range 0 to 7;
+      -- KEYCUS working values (combinational, recomputed every cycle; one shared instance
+      -- of the double-dabble / C409 datapath feeds every chip's read mux).
+      variable kc_val    : unsigned(15 downto 0);
+      variable kc_d      : bcd_digits_t;
+      variable kc_a2     : unsigned(4 downto 0);
+      variable kc_a3     : unsigned(4 downto 0);
+      variable kc_c409   : std_logic_vector(15 downto 0);
    begin
       if rising_edge(clk) then
          if reset = '1' then
@@ -380,6 +447,9 @@ begin
             coin_r    <= x"FF";
             data_read_r <= (others => '1');
             s11_bank_r <= (others => '0');  -- all windows → page 0 at reset
+            kc_p1 <= (others => '0');       -- MAME ns11_keycus_device::device_reset
+            kc_p2 <= (others => '0');
+            kc_p3 <= (others => '0');
             mb_sel_d   <= '0';
             mb_hi_d    <= '0';
             mb_addr_d  <= (others => '0');
@@ -403,6 +473,44 @@ begin
 
             data_read_r <= (others => '0');  -- must be 0: dataFromBusses in memorymux is OR-reduced
             mb_sel_d <= '0';
+
+            -- ==== KEYCUS datapath (System 11) ====
+            -- The digit-returning chips (C410/C411/C430/C431/C432) answer with the decimal
+            -- digits of a 16-bit "value". That value is normally the chip's own part number,
+            -- but the game can hand the chip a value of its own via a magic parameter, and the
+            -- chip then converts THAT (MAME ns11prot.cpp). So the digit conversion must be a
+            -- real binary->BCD, not a constant. Mux the value first, convert once.
+            kc_val := (others => '0');
+            case keycus_id is
+               when x"03" =>   -- C410: value = p1, but 410 when p1 = 0xfffe
+                  if kc_p1 = x"FFFE" then kc_val := to_unsigned(410, 16);
+                  else                    kc_val := unsigned(kc_p1);      end if;
+               when x"04" =>   -- C411: value = p3 when p1 = 0x7256, else 411
+                  if kc_p1 = x"7256" then kc_val := unsigned(kc_p3);
+                  else                    kc_val := to_unsigned(411, 16); end if;
+               when x"05" =>   -- C430: value = p1 when p3 = 0xe296, else 430
+                  if kc_p3 = x"E296" then kc_val := unsigned(kc_p1);
+                  else                    kc_val := to_unsigned(430, 16); end if;
+               when x"06" =>   -- C431: value = p3 when p1 = 0x9e61, else 431
+                  if kc_p1 = x"9E61" then kc_val := unsigned(kc_p3);
+                  else                    kc_val := to_unsigned(431, 16); end if;
+               when x"07" =>   -- C432: value = p2 when p3 = 0x2f15, else 432
+                  if kc_p3 = x"2F15" then kc_val := unsigned(kc_p2);
+                  else                    kc_val := to_unsigned(432, 16); end if;
+               when others => null;
+            end case;
+            kc_d := to_bcd(kc_val);   -- kc_d(k) = (value / 10**k) % 10
+
+            -- C409 (Soul Edge): interpolate the 3 5-bit colour channels of p2 and p3 by p1.
+            kc_a2   := unsigned(kc_p1(4 downto 0)) - 1;                   -- (p1 - 0x01) & 0x1f
+            kc_a3   := to_unsigned(0, 5) - unsigned(kc_p1(4 downto 0));   -- (0x20 - p1) & 0x1f
+            kc_c409 := "0"
+               & std_logic_vector(c409_chan(unsigned(kc_p2(14 downto 10)),
+                                            unsigned(kc_p3(14 downto 10)), kc_a2, kc_a3))   -- b << 10
+               & std_logic_vector(c409_chan(unsigned(kc_p2( 9 downto  5)),
+                                            unsigned(kc_p3( 9 downto  5)), kc_a2, kc_a3))   -- g << 5
+               & std_logic_vector(c409_chan(unsigned(kc_p2( 4 downto  0)),
+                                            unsigned(kc_p3( 4 downto  0)), kc_a2, kc_a3));  -- r
 
             -- DIAGNOSTIC poll capture: when the registered mailbox read completes
             -- (mb_sel_d=1) for the high-lane poll word 0x3E99 (= MIPS lhu 0x1FA0BD32),
@@ -432,12 +540,118 @@ begin
                -- ==== KEYCUS @0x20000-0x2001F ====
                if read_en = '1' and unsigned(addr) >= 16#20000# and unsigned(addr) <= 16#2001F# then
                   data_read_r <= (others => '0');
+                  -- MAME 16-bit offset n = byte 2n: word = addr(4:2) = n/2, lane = n&1
+                  -- (even offset -> low lane [15:0], odd offset -> high lane [31:16]).
+                  -- MAME logs and returns machine().rand() on an unexpected read; games never
+                  -- take that path, so we return 0 (no randomness emulated).
                   case keycus_id is
                      when x"01" =>   -- C406 (Tekken 2): read16[0] = 0x3256 iff p1/p2/p3 match
                         if addr(4 downto 2) = "000" and
                            kc_p1 = x"1234" and kc_p2 = x"5678" and kc_p3 = x"000F" then
                            data_read_r <= x"0000" & x"3256";
                         end if;
+
+                     when x"02" =>   -- C409 (Soul Edge): read16[7] = colour interpolation
+                        if addr(4 downto 2) = "011" then
+                           data_read_r(31 downto 16) <= kc_c409;               -- offset 7
+                        end if;
+
+                     when x"03" =>   -- C410 (Dunk Mania): digits of value, guarded by p2 = 0
+                        if kc_p2 = x"0000" then
+                           if addr(4 downto 2) = "000" then                    -- offset 1: d0
+                              data_read_r(31 downto 16) <= x"000" & std_logic_vector(kc_d(0));
+                           end if;
+                           if addr(4 downto 2) = "001" then                    -- offset 2: d2 | d3<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(3))
+                                                         & x"0" & std_logic_vector(kc_d(2));
+                              data_read_r(31 downto 16) <= x"0" & std_logic_vector(kc_d(1))
+                                                         & x"0" & std_logic_vector(kc_d(4));
+                           end if;                                             -- offset 3: d4 | d1<<8
+                        end if;
+
+                     when x"04" =>   -- C411 (Prime Goal EX)
+                        if kc_p2 = x"0000" and
+                           ( ( (kc_p1 = x"0000" or kc_p1 = x"0100") and kc_p3 = x"FF7F" )
+                             or kc_p1 = x"7256" ) then
+                           if addr(4 downto 2) = "000" then                    -- offset 0: d0 | d1<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(1))
+                                                         & x"0" & std_logic_vector(kc_d(0));
+                           end if;
+                           if addr(4 downto 2) = "001" then                    -- offset 2: d2 | d3<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(3))
+                                                         & x"0" & std_logic_vector(kc_d(2));
+                           end if;
+                           if addr(4 downto 2) = "100" then                    -- offset 8: d4
+                              data_read_r(15 downto  0) <= x"000" & std_logic_vector(kc_d(4));
+                           end if;
+                        end if;
+
+                     when x"05" =>   -- C430 (Xevious 3D/G)
+                        if kc_p2 = x"0000" and
+                           ( (kc_p1 = x"BFFF" and kc_p3 = x"0000") or kc_p3 = x"E296" ) then
+                           if addr(4 downto 2) = "000" then                    -- offset 1: d4
+                              data_read_r(31 downto 16) <= x"000" & std_logic_vector(kc_d(4));
+                           end if;
+                           if addr(4 downto 2) = "010" then                    -- offset 4: d2 | d3<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(3))
+                                                         & x"0" & std_logic_vector(kc_d(2));
+                              data_read_r(31 downto 16) <= x"0" & std_logic_vector(kc_d(1))
+                                                         & x"0" & std_logic_vector(kc_d(0));
+                           end if;                                             -- offset 5: d0 | d1<<8
+                        end if;
+
+                     when x"06" =>   -- C431 (Dancing Eyes)
+                        if kc_p2 = x"0000" and
+                           ( ( (kc_p1 = x"0000" or kc_p1 = x"AB50") and kc_p3 = x"7FFF" )
+                             or kc_p1 = x"9E61" ) then
+                           if addr(4 downto 2) = "000" then                    -- offset 0: d0 | d1<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(1))
+                                                         & x"0" & std_logic_vector(kc_d(0));
+                           end if;
+                           if addr(4 downto 2) = "010" then                    -- offset 4: d2 | d3<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(3))
+                                                         & x"0" & std_logic_vector(kc_d(2));
+                           end if;
+                           if addr(4 downto 2) = "100" then                    -- offset 8: d4
+                              data_read_r(15 downto  0) <= x"000" & std_logic_vector(kc_d(4));
+                           end if;
+                        end if;
+
+                     when x"07" =>   -- C432 (Pocket Racer)
+                        if kc_p1 = x"0000" and
+                           ( ( (kc_p3 = x"0000" or kc_p3 = x"00DC") and kc_p2 = x"EFFF" )
+                             or kc_p3 = x"2F15" ) then
+                           if addr(4 downto 2) = "001" then                    -- offset 2: d0 | d1<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(1))
+                                                         & x"0" & std_logic_vector(kc_d(0));
+                           end if;
+                           if addr(4 downto 2) = "010" then                    -- offset 4: d2 | d3<<8
+                              data_read_r(15 downto  0) <= x"0" & std_logic_vector(kc_d(3))
+                                                         & x"0" & std_logic_vector(kc_d(2));
+                           end if;
+                           if addr(4 downto 2) = "011" then                    -- offset 6: d4 | d5<<8
+                              data_read_r(15 downto  0) <= x"000" & std_logic_vector(kc_d(4));
+                           end if;   -- d5 = (value/100000)%10 = 0 for any 16-bit value
+                        end if;
+
+                     when x"08" =>   -- C442 (Star Sweep): read16[1] = 0xc442 for the magic p2.
+                        if addr(4 downto 2) = "000" and                        -- offset 1
+                           kc_p1 = x"0020" and kc_p2 = x"0021" then
+                           data_read_r(31 downto 16) <= x"C442";
+                        end if;      -- the other accepted C442 reads all return 0x0000
+
+                     when x"09" =>   -- C443 (My Angel 3 / Point Blank 2)
+                        if addr(4 downto 2) = "000" then
+                           if kc_p1 = x"0020" and                              -- offset 0: 0x0020
+                              (kc_p2 = x"0000" or kc_p2 = x"FFFF" or kc_p2 = x"FFE0") then
+                              data_read_r(15 downto  0) <= x"0020";
+                           end if;
+                           if kc_p1 = x"0020" and                              -- offset 1: 0xc443
+                              (kc_p2 = x"FFFF" or kc_p2 = x"FFE0") then
+                              data_read_r(31 downto 16) <= x"C443";
+                           end if;  -- p2 = 0xffdf answers 0x0000 at offset 1
+                        end if;
+
                      when others => null;   -- no keycus: reads return 0
                   end case;
                end if;
@@ -458,6 +672,64 @@ begin
                               kc_p3 <= data_write(31 downto 16);         -- offset 3
                            end if;
                         end if;
+
+                     when x"02" =>   -- C409 writes: offset1->p1, offset3->p2, offset7->p3
+                        if write_mask(3 downto 2) /= "00" then
+                           if addr(4 downto 2) = "000" then kc_p1 <= data_write(31 downto 16); end if;
+                           if addr(4 downto 2) = "001" then kc_p2 <= data_write(31 downto 16); end if;
+                           if addr(4 downto 2) = "011" then kc_p3 <= data_write(31 downto 16); end if;
+                        end if;
+
+                     when x"03" =>   -- C410 writes: offset0->p1, offset2->p2
+                        if write_mask(1 downto 0) /= "00" then
+                           if addr(4 downto 2) = "000" then kc_p1 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "001" then kc_p2 <= data_write(15 downto 0); end if;
+                        end if;
+
+                     when x"04" =>   -- C411 writes: offset2->p1, offset8->p2, offset10->p3
+                        if write_mask(1 downto 0) /= "00" then
+                           if addr(4 downto 2) = "001" then kc_p1 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "100" then kc_p2 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "101" then kc_p3 <= data_write(15 downto 0); end if;
+                        end if;
+
+                     when x"05" =>   -- C430 writes: offset0->p1, offset1->p2, offset4->p3
+                        if addr(4 downto 2) = "000" then
+                           if write_mask(1 downto 0) /= "00" then
+                              kc_p1 <= data_write(15 downto 0);          -- offset 0
+                           end if;
+                           if write_mask(3 downto 2) /= "00" then
+                              kc_p2 <= data_write(31 downto 16);         -- offset 1
+                           end if;
+                        end if;
+                        if addr(4 downto 2) = "010" and write_mask(1 downto 0) /= "00" then
+                           kc_p3 <= data_write(15 downto 0);             -- offset 4
+                        end if;
+
+                     when x"06" =>   -- C431 writes: offset0->p1, offset4->p2, offset12->p3
+                        if write_mask(1 downto 0) /= "00" then
+                           if addr(4 downto 2) = "000" then kc_p1 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "010" then kc_p2 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "110" then kc_p3 <= data_write(15 downto 0); end if;
+                        end if;
+
+                     when x"07" =>   -- C432 writes: offset0->p1, offset2->p2, offset6->p3
+                        if write_mask(1 downto 0) /= "00" then
+                           if addr(4 downto 2) = "000" then kc_p1 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "001" then kc_p2 <= data_write(15 downto 0); end if;
+                           if addr(4 downto 2) = "011" then kc_p3 <= data_write(15 downto 0); end if;
+                        end if;
+
+                     when x"08" | x"09" =>   -- C442 / C443 writes: offset0->p1, offset1->p2
+                        if addr(4 downto 2) = "000" then
+                           if write_mask(1 downto 0) /= "00" then
+                              kc_p1 <= data_write(15 downto 0);          -- offset 0
+                           end if;
+                           if write_mask(3 downto 2) /= "00" then
+                              kc_p2 <= data_write(31 downto 16);         -- offset 1
+                           end if;
+                        end if;
+
                      when others => null;
                   end case;
                end if;
@@ -472,16 +744,28 @@ begin
                      -- each odd-reg sh aliased onto the EVEN window with lane-0 zeros,
                      -- wiping windows right after the mapper set them -> s11_bank stuck 0
                      -- -> movie chunk header read from page 0 (bit31 set) -> attract park.
-                     -- page = d[7:6] & d[1:0] (per MAME rom8_w).
+                     -- page: rom8 = d[7:6] & d[1:0] (MAME rom8_w, 4 bits);
+                     -- rom8_64 (C443) = (d[7:6] & d[2:0]) XOR upper-latch<<4 (MAME rom8_64_w,
+                     -- 5 bits; the XOR happens here at write time, per set_entry semantics).
                      for w in 0 to 3 loop
                         if to_integer(unsigned(addr(3 downto 2))) = w then
                            if write_mask(1 downto 0) /= "00" then
-                              s11_bank_r(w*8+3 downto w*8)   <=
-                                 data_write(7 downto 6) & data_write(1 downto 0);
+                              if keycus_id = x"09" then
+                                 s11_bank_r(w*10+4 downto w*10) <=
+                                    (data_write(7) xor s11_up) & data_write(6) & data_write(2 downto 0);
+                              else
+                                 s11_bank_r(w*10+4 downto w*10) <=
+                                    '0' & data_write(7 downto 6) & data_write(1 downto 0);
+                              end if;
                            end if;
                            if write_mask(3 downto 2) /= "00" then
-                              s11_bank_r(w*8+7 downto w*8+4) <=
-                                 data_write(23 downto 22) & data_write(17 downto 16);
+                              if keycus_id = x"09" then
+                                 s11_bank_r(w*10+9 downto w*10+5) <=
+                                    (data_write(23) xor s11_up) & data_write(22) & data_write(18 downto 16);
+                              else
+                                 s11_bank_r(w*10+9 downto w*10+5) <=
+                                    '0' & data_write(23 downto 22) & data_write(17 downto 16);
+                              end if;
                            end if;
                         end if;
                      end loop;

@@ -137,10 +137,13 @@ entity memorymux is
       zn_platform          : in  std_logic_vector(3 downto 0) := "0000";
 
       -- Namco System 11: when '1', boot from the 4MB game program @0x1FC00000
-      -- (no PSX BIOS) and bank the 16MB ROM as 8x1MB windows @0x1F000000.
-      -- s11_bank = 8 packed 4-bit page selectors (window w = nibble w).
+      -- (no PSX BIOS) and bank the ROM (16MB rom8 / 32MB rom8_64) as 8x1MB
+      -- windows @0x1F000000. s11_bank = 8 packed 5-bit page selectors.
       zn_system11          : in  std_logic := '0';
-      s11_bank             : in  std_logic_vector(31 downto 0) := (others => '0');
+      s11_bank             : in  std_logic_vector(39 downto 0) := (others => '0');
+      -- rom8_64 upper-16MB latch (MAME rom8_64_upper_w @0x1F080000/2); consumed
+      -- by zn1_io at bank-register write time.
+      s11_up               : out std_logic := '0';
 
       spu_memctrl          : in  unsigned(13 downto 0);
       bus_spu_addr         : out unsigned(9 downto 0) := (others => '0'); 
@@ -395,6 +398,7 @@ architecture arch of memorymux is
    signal zn_bank_reg            : std_logic_vector(4 downto 0) := (others => '0');
    -- ZN-1 8MB bank register (3-bit, selects 8MB bank at 0x1F000000, non-Visco platforms, banks 0-6)
    signal zn_bank_8mb            : std_logic_vector(2 downto 0) := (others => '0');
+   signal s11_up_r               : std_logic := '0';  -- rom8_64 upper-16MB latch (0x1F080000/2)
 
 begin
 
@@ -605,10 +609,12 @@ begin
    mem_reqsize      <= unsigned(writeFifo_Dout(65 downto 64)) when writeFifo_Empty = '0' else mem_save_reqsize      when mem_save_request = '1' else mem_in_reqsize     ;
    mem_writeMask    <= writeFifo_Dout(69 downto 66)           when writeFifo_Empty = '0' else mem_save_writeMask    when mem_save_request = '1' else mem_in_writeMask   ;
    mem_dataWrite    <= writeFifo_Dout(31 downto  0)           when writeFifo_Empty = '0' else mem_save_dataWrite    when mem_save_request = '1' else mem_in_dataWrite   ;
-  
+
+   s11_up <= s11_up_r;
+
    process (clk1x)
       variable biosPatch  : std_logic_vector(31 downto 0);
-      variable s11_page   : unsigned(3 downto 0);  -- selected 1MB page for current bank window
+      variable s11_page   : unsigned(4 downto 0);  -- selected 1MB page for current bank window
       variable fcap_exp   : std_logic_vector(31 downto 0);  -- DIAG: expected helper instruction word
    begin
       if rising_edge(clk1x) then
@@ -641,6 +647,7 @@ begin
             ext_lastactive   <= '0';
             zn_bank_reg      <= (others => '0');
             zn_bank_8mb      <= (others => '0');
+            s11_up_r         <= '0';
             pal_read_pending      <= '0';   -- build #47
             redrow_read_pending   <= '0';   -- build #47
             palrd_green_seen      <= '0';   -- build #47
@@ -768,14 +775,14 @@ begin
                            ram_cache       <= '0';
                            ram_rnw         <= '1';
                            case (mem_addressInstr(22 downto 20)) is
-                              when "000" => s11_page := unsigned(s11_bank(3 downto 0));
-                              when "001" => s11_page := unsigned(s11_bank(7 downto 4));
-                              when "010" => s11_page := unsigned(s11_bank(11 downto 8));
-                              when "011" => s11_page := unsigned(s11_bank(15 downto 12));
-                              when "100" => s11_page := unsigned(s11_bank(19 downto 16));
-                              when "101" => s11_page := unsigned(s11_bank(23 downto 20));
-                              when "110" => s11_page := unsigned(s11_bank(27 downto 24));
-                              when others => s11_page := unsigned(s11_bank(31 downto 28));
+                              when "000" => s11_page := unsigned(s11_bank(4 downto 0));
+                              when "001" => s11_page := unsigned(s11_bank(9 downto 5));
+                              when "010" => s11_page := unsigned(s11_bank(14 downto 10));
+                              when "011" => s11_page := unsigned(s11_bank(19 downto 15));
+                              when "100" => s11_page := unsigned(s11_bank(24 downto 20));
+                              when "101" => s11_page := unsigned(s11_bank(29 downto 25));
+                              when "110" => s11_page := unsigned(s11_bank(34 downto 30));
+                              when others => s11_page := unsigned(s11_bank(39 downto 35));
                            end case;
                            ram_Adr         <= std_logic_vector(to_unsigned(16#800000#, 27) + resize(s11_page & to_unsigned(0, 20), 27) + resize(unsigned(mem_addressInstr(19 downto 2)) & "00", 27));
                            state           <= READROM;
@@ -893,19 +900,31 @@ begin
                               state   <= WAITFORRAMREAD;
                               waitcnt <= 0;
                            end if;
+                        elsif (zn_system11 = '1' and mem_rnw = '0' and mem_addressData(28 downto 0) >= 16#1F080000# and mem_addressData(28 downto 0) < 16#1F080004#) then
+                           -- rom8_64 upper-bank latch (MAME rom8_64_upper_w): halfword write to
+                           -- 0x1F080000 selects the lower 16MB (offset 0), 0x1F080002 the upper
+                           -- (offset 1 -> bankoffset 16). Stores arrive word-aligned with the
+                           -- halfword lane in the write mask; on a full-word store offset 1 wins
+                           -- (MAME invokes offset 0 then 1, last call wins).
+                           if (mem_writeMask(3 downto 2) /= "00") then
+                              s11_up_r <= '1';
+                           elsif (mem_writeMask(1 downto 0) /= "00") then
+                              s11_up_r <= '0';
+                           end if;
+                           state <= BUSWRITE;
                         elsif (zn_system11 = '1' and mem_rnw = '1' and mem_addressData(28 downto 0) >= 16#1F000000# and mem_addressData(28 downto 0) < 16#1F800000#) then -- S11 banked ROM (8x1MB windows)
                            ram_ena         <= '1';
                            ram_cache       <= '0';
                            ram_rnw         <= '1';
                            case (mem_addressData(22 downto 20)) is
-                              when "000" => s11_page := unsigned(s11_bank(3 downto 0));
-                              when "001" => s11_page := unsigned(s11_bank(7 downto 4));
-                              when "010" => s11_page := unsigned(s11_bank(11 downto 8));
-                              when "011" => s11_page := unsigned(s11_bank(15 downto 12));
-                              when "100" => s11_page := unsigned(s11_bank(19 downto 16));
-                              when "101" => s11_page := unsigned(s11_bank(23 downto 20));
-                              when "110" => s11_page := unsigned(s11_bank(27 downto 24));
-                              when others => s11_page := unsigned(s11_bank(31 downto 28));
+                              when "000" => s11_page := unsigned(s11_bank(4 downto 0));
+                              when "001" => s11_page := unsigned(s11_bank(9 downto 5));
+                              when "010" => s11_page := unsigned(s11_bank(14 downto 10));
+                              when "011" => s11_page := unsigned(s11_bank(19 downto 15));
+                              when "100" => s11_page := unsigned(s11_bank(24 downto 20));
+                              when "101" => s11_page := unsigned(s11_bank(29 downto 25));
+                              when "110" => s11_page := unsigned(s11_bank(34 downto 30));
+                              when others => s11_page := unsigned(s11_bank(39 downto 35));
                            end case;
                            ram_Adr         <= std_logic_vector(to_unsigned(16#800000#, 27) + resize(s11_page & to_unsigned(0, 20), 27) + resize(unsigned(mem_addressData(19 downto 2)) & "00", 27));
                            ram_rotate_bits <= std_logic_vector(mem_addressData(1 downto 0));
