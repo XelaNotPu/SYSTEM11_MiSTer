@@ -24,7 +24,7 @@ stub (plus 32 MB rom8_64 banking for My Angel 3).
 | **Star Sweep** (1997) | World, STP2/VER.A | New — boots, attract mode renders |
 | **Kosodate Quiz My Angel 3** (1998) | Japan, KQT1/VER.A | New — boots, attract mode renders (first title using 32 MB rom8_64 banking) |
 | **Point Blank 2** (1999) | World, GNB2/VER.A | **Untested** — MRAs provided; needs a lightgun, which the core does not implement yet |
-| **Family Bowl** (1997) | Japan, FB1/VER.A | **Not working** — needs an H8/3002 sub-board that is not emulated (not working in MAME either) |
+| **Family Bowl** (1997) | Japan, FB1/VER.A | **Not working** — needs an H8/3002 sub-board that is not emulated |
 
 The seven new titles are verified to boot and render their attract sequences on
 hardware; gameplay, sound and input depth-testing at the level done for the two
