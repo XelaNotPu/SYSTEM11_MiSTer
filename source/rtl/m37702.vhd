@@ -24,11 +24,11 @@ entity m37702 is
       ce         : in  std_logic;
       reset      : in  std_logic;
 
-      bus_addr   : out std_logic_vector(23 downto 0);
-      bus_dout   : out std_logic_vector(7 downto 0);
+      bus_addr   : out std_logic_vector(23 downto 0) := (others => '0');
+      bus_dout   : out std_logic_vector(7 downto 0) := (others => '0');
       bus_din    : in  std_logic_vector(7 downto 0);
-      bus_rd     : out std_logic;
-      bus_wr     : out std_logic;
+      bus_rd     : out std_logic := '0';
+      bus_wr     : out std_logic := '0';
       bus_ready  : in  std_logic;
 
       irq0       : in  std_logic;
@@ -98,6 +98,7 @@ architecture arch of m37702 is
                   C_JMP, C_JSR, C_JMPI, C_JSRIX,   -- C_JSRIX: 0xFC JSR (abs,X) indirect
                   C_JMPIX,                        -- 0x7C JMP (abs,X) indirect (no push)
                   C_JSL,                          -- 0x22 JSL al (24-bit subroutine)
+                  C_JML,                          -- 0x5C JML al (24-bit jump, no push)
                   C_LDM, C_SEB, C_CLB,    -- M37702: store-imm-to-mem, set/clear bits
                   C_BBS, C_BBC,           -- M37702: bit-test-and-branch (0x24/2C/34/3C)
                   C_MPY,                  -- M37702: 0x89-page multiply (A*SRC -> B:A)
@@ -697,6 +698,7 @@ begin
                            when x"4C"=>cls<=C_JMP;am<=AM_ABS;
                            when x"20"=>cls<=C_JSR;am<=AM_ABS;
                            when x"22"=>cls<=C_JSL;am<=AM_AL;            -- JSL al (24-bit)
+                           when x"5C"=>cls<=C_JML;am<=AM_AL;            -- JML al (24-bit jump, no push)
                            when x"6C"=>cls<=C_JMPI;am<=AM_ABS;w8<='0';  -- JMP (abs) indirect
                            when x"FC"=>cls<=C_JSRIX;am<=AM_ABS;w8<='0'; -- JSR (abs,X) indirect
                            when x"7C"=>cls<=C_JMPIX;am<=AM_ABS;w8<='0'; -- JMP (abs,X) indirect
@@ -864,6 +866,14 @@ begin
                      when C_JSL =>
                         -- ea = 24-bit target. Push PG (8-bit), then PC-1 (16-bit), then jump24.
                         pushval<=x"00"&regPG; push_w8<='1'; ret<=ST_JSL_PC; state<=ST_PUSH_LO;
+                     when C_JML =>
+                        -- 0x5C JML al: same 24-bit target as JSL, but NO return address is
+                        -- pushed. Load PC and the program bank straight from ea and retire.
+                        -- Namco's shared System 11 sound library uses this to cross banks
+                        -- (Dunk Mania / Prime Goal EX halted the C76 here at PC 0xB9A0).
+                        regPC <= ea(15 downto 0);
+                        regPG <= ea(23 downto 16);
+                        state <= ST_RETIRE;
                      when C_JSRIX | C_JMPIX =>
                         -- M37710 JMP/JSR (abs,X): pointer table lives at PG:(abs+X) — MAME
                         -- read_16_AXI(REG_PG | u16(abs + REG_X)). The missing +X (and PG

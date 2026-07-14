@@ -57,6 +57,7 @@ entity c76_sound is
       in_player2 : in  std_logic_vector(7 downto 0);
       in_player4 : in  std_logic_vector(7 downto 0);
       in_switch  : in  std_logic_vector(7 downto 0);
+      in_adc0    : in  std_logic_vector(7 downto 0) := x"FF";  -- AN0: Pocket Racer steering wheel
       in_adc1    : in  std_logic_vector(7 downto 0) := x"FF";  -- P1 BTN4 analog (Tekken right kick)
       in_adc2    : in  std_logic_vector(7 downto 0) := x"FF";  -- P1 BTN3 analog (Tekken left kick)
 
@@ -177,7 +178,7 @@ begin
          clk => clk, ce => ce, reset => reset,
          bios_wr => bios_wr, bios_addr => bios_addr, bios_din => bios_din,
          irq0 => irq0, irq1 => '0', irq2 => irq2,
-         in_adc1 => in_adc1, in_adc2 => in_adc2,
+         in_adc0 => in_adc0, in_adc1 => in_adc1, in_adc2 => in_adc2,
          ext_addr => ext_addr, ext_dout => ext_dout, ext_din => ext_din,
          ext_rd => ext_rd, ext_wr => ext_wr, ext_ready => ext_ready,
          dbg_pc => dbg_pc_i, dbg_opcode => dbg_op_i, dbg_valid => dbg_valid_i, dbg_halted => dbg_halted, dbg_x => open,

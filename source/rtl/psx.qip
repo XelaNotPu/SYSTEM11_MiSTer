@@ -30,6 +30,11 @@ set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) pJoypad.vh
 # controller-port state machine) are all removed from the build.
 # Restore: git checkout release/20260712 -- rtl/psx.qip rtl/psx_top.vhd
 # pJoypad.vhd is KEPT: it declares joypad_t, still used by psx_top's ports.
+# 2026-07-13: sio0_stub ADDED — Tekken never touches SIO0, but dunkmnia/
+# souledge/primglex/pocketrc run stock PSX pad init at boot and poll
+# JOY_STAT bit0 forever if the registers read zero (SIO0 is inside the
+# CXD8530 on real boards). The stub answers as an empty controller port.
+set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) sio0_stub.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) timer.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) dma.vhd ]
 set_global_assignment -name VHDL_FILE [file join $::quartus(qip_path) exp2.vhd ]

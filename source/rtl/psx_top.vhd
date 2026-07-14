@@ -709,7 +709,9 @@ architecture arch of psx_top is
    signal zn_sec_select          : std_logic_vector(2 downto 0);  -- {data[7],data[3],data[2]}
    signal zn_coin_out            : std_logic_vector(7 downto 0);
    -- System 11: bank selectors (zn1_io -> memorymux) + C76 mailbox (zn1_io <-> c76_sound)
-   signal zn_s11_bank            : std_logic_vector(31 downto 0);
+   signal zn_s11_bank            : std_logic_vector(39 downto 0);
+   signal zn_s11_up              : std_logic;
+   signal s11_gputype1           : std_logic;
    signal zn_dbg_bankwr          : std_logic_vector(31 downto 0);
    signal zn_mb_addr             : std_logic_vector(13 downto 0);
    signal zn_mb_wdata            : std_logic_vector(15 downto 0);
@@ -1649,9 +1651,27 @@ begin
    Gun2CrosshairOn  <= '0';
    JustifierIrqEnable <= (others => '0');
 
-   -- SIO0 / joypad bus slave: reads return 0, never raises an IRQ.
+   -- SIO0 / joypad bus slave: register stub, no device attached, never IRQs.
+   -- 2026-07-13: MUST NOT be a zero tie-off. SIO0 lives inside the CXD8530 on
+   -- real System 11 hardware, and Namco's library runs stock PSX pad init at
+   -- boot on several titles (dunkmnia/souledge/primglex/pocketrc): it polls
+   -- JOY_STAT bit0 (TX Ready) forever if the registers read as zero -> black
+   -- screen with a healthy C76. The stub answers like silicon with an empty
+   -- controller port, so pad detection times out and boot proceeds.
    irq_PAD          <= '0';
-   bus_pad_dataRead <= (others => '0');
+   isio0stub : entity work.sio0_stub
+   port map
+   (
+      clk1x         => clk1x,
+      ce            => ce,
+      reset         => reset_intern,
+      bus_addr      => bus_pad_addr,
+      bus_dataWrite => bus_pad_dataWrite,
+      bus_read      => bus_pad_read,
+      bus_write     => bus_pad_write,
+      bus_writeMask => bus_pad_writeMask,
+      bus_dataRead  => bus_pad_dataRead
+   );
 
    -- Joypad savestate outputs (savestates module is kept and reads these).
    SS_DataRead_JOYPAD <= (others => '0');
@@ -2029,10 +2049,13 @@ begin
       system_paused        => pausing,
       
       ditherOff            => ditherOff,
-      gpuType1             => zn_system11,   -- System 11 CXD8538Q = gputype 1 coordinate layout.
-                                     -- (2026-06-28: confirmed gpuType1=>'0' only compensates the display
-                                     -- start; rendering still garbage -> the real bug is a ÷4 corruption
-                                     -- in the GAME's coordinate values, NOT the parse format. Reverted.)
+      gpuType1             => s11_gputype1,  -- 2026-07-13: per-GAME, not per-platform. MAME namcos11.cpp:
+                                     -- only Tekken 1 is a coh100 board (CXD8538Q = gputype1); every other
+                                     -- System 11 game incl. Tekken 2 is coh110 (CXD8561Q = gputype2, the
+                                     -- retail PSX GPU). Tekken 1 is exactly the keycus_id=0 game. Games
+                                     -- that runtime-probe the GPU (Tekken 2, Dancing Eyes) adapt either
+                                     -- way; the rest hardcode type-2 coordinate encodings and rendered
+                                     -- black under forced type1 (display start y read as 60 vs 240 etc).
       interlaced480pHack   => interlaced480pHack,
       REPRODUCIBLEGPUTIMING=> REPRODUCIBLEGPUTIMING,
       videoout_on          => videoout_on,
@@ -2466,6 +2489,7 @@ begin
       zn_system11  => zn_system11,
       keycus_id    => keycus_id,
       s11_bank     => zn_s11_bank,
+      s11_up       => zn_s11_up,
       mb_addr      => zn_mb_addr,
       mb_wdata     => zn_mb_wdata,
       mb_we        => zn_mb_we,
@@ -2695,9 +2719,18 @@ begin
    -- does irqVecCount climb (per-frame IRQs recurring => running) or stay 1 (stuck in first handler)?
    -- 2026-06-27: cycle the spin-loop's polled addresses t0 / a3 (~0.5s each via dbg_cyc(24)) so one
    -- build reveals both. Identify by value (t0/a3 are 0x8003xxxx RAM or 0x1FA0xxxx I/O addresses).
+   -- gputype1 = coh100 board = CXD8538Q. Only Tekken 1 (the keycus-less game) uses it;
+   -- all other System 11 boards are coh110 with the retail CXD8561Q (type 2).
+   s11_gputype1 <= '1' when (zn_system11 = '1' and keycus_id = x"00") else '0';
+
    zn_debug_val <= std_logic_vector(cpu_dbg_instr_word);  -- live PC (pcOld1)
    zn_dbg_a0    <= cpu_dbg_fault_s1s2;  -- mode 1: [31:16]=$s1[15:0] [15:0]=$s2[15:0] at the fault (branch operands)
-   zn_dbg_a1    <= zn_s11_bank;         -- mode 2 REPURPOSED 2026-07-06: live s11_bank window regs (8 x 4-bit pages) — is window0=11 when the movie decoder parks?
+   -- mode 2: live s11_bank window regs — low nibble of each 5-bit page (window w in bits [4w+3:4w]).
+   -- Page bit4 (rom8_64 upper half) is not visible here; windows are 5-bit since the rom8_64 change.
+   zn_dbg_a1    <= zn_s11_bank(38 downto 35) & zn_s11_bank(33 downto 30) &
+                   zn_s11_bank(28 downto 25) & zn_s11_bank(23 downto 20) &
+                   zn_s11_bank(18 downto 15) & zn_s11_bank(13 downto 10) &
+                   zn_s11_bank(8 downto 5)   & zn_s11_bank(3 downto 0);
    zn_dbg_eeprom_o <= zn_dbg_eeprom;
    -- GPU activity snapshot: [31]gpu_accessed [30]dma2_wrote_gpu [29]dma2_prim [28]pio_prim
    --   [27]dma2_e5 [26]raster_pixel(drew) [25]ram_exec [24]game_ram_exec
@@ -3886,6 +3919,7 @@ begin
       zn_platform          => zn_platform,
       zn_system11          => zn_system11,
       s11_bank             => zn_s11_bank,
+      s11_up               => zn_s11_up,
 
       spu_memctrl          => spu_memctrl,
       bus_spu_addr         => bus_spu_addr,     

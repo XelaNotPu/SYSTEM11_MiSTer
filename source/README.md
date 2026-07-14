@@ -10,22 +10,26 @@ The core is derived from the excellent [PSX_MiSTer](https://github.com/MiSTer-de
 
 | Game | Status | Notes |
 |------|--------|-------|
-| Tekken (World, TE2/VER.C) | **Playable** | Gameplay, sound effects, music, FMV intros and attract mode all work. Three regional alternates are also provided (World TE2/VER.B, Asia TE4/VER.C, Japan TE1/VER.B). |
-| Tekken 2 Ver.B (World, TES2/VER.B) | **Playable** | Verified on hardware: boots, renders, music and inputs all work. |
+| Tekken (World, TE2/VER.C) | **Playable** | Gameplay, sound effects, music, FMV intros and attract mode all work. Three regional alternates provided. |
+| Tekken 2 Ver.B (World, TES2/VER.D) | **Playable** | Primary is the final revision (boot-tested); the gameplay-verified World TES2/VER.B and six more revisions ship as alternates. |
+| Soul Edge Ver. II (Asia, SO4/VER.C) | Boots + attract | KEYCUS C409 |
+| Dunk Mania (World, DM2/VER.C) | Boots + attract | KEYCUS C410; slow first boot (~2 min) |
+| Xevious 3D/G (World, XV32/VER.B) | Boots + attract | KEYCUS C430 |
+| Prime Goal EX (Japan, PG1/VER.A) | Boots + attract | KEYCUS C411 |
+| Dancing Eyes (World, DC2/VER.B) | Boots + attract | KEYCUS C431 |
+| Star Sweep (World, STP2/VER.A) | Boots + attract | KEYCUS C442 |
+| Kosodate Quiz My Angel 3 (Japan, KQT1/VER.A) | Boots + attract | KEYCUS C443 + rom8_64 32 MB banking |
 
-**Only the two sets above are verified.** Other Tekken 2 revisions (including the
-TES2/VER.D parent) are **not** included: they are untested, and some exhibit
-texture corruption that is still under investigation. The corruption appears to be
-revision-specific rather than affecting the whole Tekken 2 family.
-
-Other System 11 titles (Soul Edge, Xevious 3D/G, Dancing Eyes, Dunk Mania, Prime
-Goal EX, Star Sweep, Pocket Racer, My Angel 3, Point Blank 2) are future work and
-are **not** supported by this build. Each needs at least its own KEYCUS chip
-implemented; some additionally need ROM8(64) banking, a lightgun, or analog inputs.
+The seven new titles pass their KEYCUS protection checks and render their
+attract sequences on hardware; gameplay depth-testing at the Tekken level is in
+progress. **Pocket Racer** does not boot yet (a C76 shared-RAM handshake blocks
+it — under investigation; its analog wheel plumbing is already in the core).
+Point Blank 2 (lightgun; no ROM verified) and Family Bowl (H8/3002 sub-board)
+are out of scope.
 
 ## Installation
 
-1. Copy `XNSYSTEM11_20260712.rbf` to `_Arcade/cores/` on your MiSTer SD card.
+1. Copy `XNSYSTEM11_20260713.rbf` to `_Arcade/cores/` on your MiSTer SD card.
 2. Copy the `.mra` files (e.g. `Tekken (World TE2 Ver.C).mra`) to `_Arcade/`.
 3. Place the ROM zips in `games/mame/` (the standard MiSTer arcade ROM location).
 
@@ -37,7 +41,18 @@ ROMs are **not** included with this project and are not linked from it — see [
 | Tekken (World TE2 Ver.B).mra | `tekkenb.zip` + `tekken.zip` + `namcoc76.zip` |
 | Tekken (Asia TE4 Ver.C).mra | `tekkenac.zip` + `tekken.zip` + `namcoc76.zip` |
 | Tekken (Japan TE1 Ver.B).mra | `tekkenjb.zip` + `tekken.zip` + `namcoc76.zip` |
-| Tekken 2 Ver.B (World TES2 Ver.B).mra | `tekken2b.zip` + `namcoc76.zip` |
+| Tekken 2 Ver.B (World TES2-VER.D).mra | `tekken2.zip` + `namcoc76.zip` |
+| Tekken 2 alternates (7 MRAs) | revision zip (`tekken2a/ua/ub/ud/jb/jc`) or merged `tekken2.zip`, + `namcoc76.zip` |
+| Soul Edge Ver. II (Asia SO4-VER.C).mra | `souledge.zip` + `namcoc76.zip` |
+| Dunk Mania (World DM2-VER.C).mra | `dunkmnia.zip` + `namcoc76.zip` |
+| Xevious 3D-G (World XV32-VER.B).mra | `xevi3dg.zip` + `namcoc76.zip` |
+| Prime Goal EX (Japan PG1-VER.A).mra | `primglex.zip` + `namcoc76.zip` |
+| Dancing Eyes (World DC2-VER.B).mra | `danceyes.zip` + `namcoc76.zip` |
+| Star Sweep (World STP2-VER.A).mra | `starswep.zip` + `namcoc76.zip` |
+| Kosodate Quiz My Angel 3 (Japan KQT1-VER.A).mra | `myangel3.zip` + `namcoc76.zip` |
+| Pocket Racer (Japan PKR1-VER.B).mra | `pocketrc.zip` + `namcoc76.zip` (not working yet) |
+| Point Blank 2 (World GNB2-VER.A).mra | `ptblank2a.zip` (or merged `ptblank2.zip`) + `namcoc76.zip` (untested, no lightgun) |
+| Family Bowl (Japan FB1-VER.A).mra | `fambowl.zip` + `namcoc76.zip` (not working) |
 
 `namcoc76.zip` (the Namco C76 sound-CPU BIOS) is required by **every** MRA — it is
 loaded into the core at runtime and is not embedded in the bitstream.
@@ -82,23 +97,29 @@ Opening the OSD pauses the core. Video scaling/aspect options are currently hand
 
 ## Known Issues
 
-- **Other Tekken 2 revisions** (TES2/VER.D parent, US and Japan sets) are untested and
-  are not shipped. Some show texture corruption; the shipped World TES2/VER.B set does
-  not. The issue looks revision-specific and is still under investigation.
+- **Long-session display blank (under investigation)**: in extended soak testing, one
+  build blanked its video output after ~100 minutes of continuous attract mode while
+  the game itself kept running (sound/inputs alive, OSD works; a core reload restores
+  the picture). Short and medium sessions are unaffected in testing.
 - **Sound fidelity**: the C76/C352 sound engine plays correctly, but is still being
   tuned against real hardware. Feedback is welcome.
-- Only the Tekken-family KEYCUS chips are handled so far (Tekken needs none; Tekken 2's
-  C406 is emulated). The other titles' KEYCUS chips (C409, C410, C411, C430, C431, C432,
-  C442, C443) are not yet implemented.
+- **Pocket Racer** does not boot yet: the MIPS waits on a C76 shared-RAM handshake
+  that never completes (KEYCUS is verified good — the exchange is bus-exact vs MAME in
+  simulation). Analog wheel/pedal plumbing is already present for when it is fixed.
+- All eight System 11 KEYCUS chips (C406, C409, C410, C411, C430, C431, C432, C442,
+  C443) are implemented and hardware-verified. GPU type is selected per game
+  (Tekken 1 = CXD8538Q/coh100; every other title = CXD8561Q/coh110, per MAME).
 - **This core targets System 11 hardware only.** PlayStation console features inherited
-  from the PSX_MiSTer base that System 11 does not use — the PSX controller port (SIO0),
-  memory cards, the SPU and the CD-ROM drive — are removed or stubbed to reclaim FPGA
-  logic. System 11 needs none of them: arcade inputs are read by the C76 MCU, game data
-  comes from banked ROM rather than a CD, and audio is produced by the C352.
+  from the PSX_MiSTer base that System 11 does not use — memory cards, the SPU and the
+  CD-ROM drive — are removed or stubbed to reclaim FPGA logic. The PSX controller port
+  (SIO0) is a minimal register stub: several titles run stock PSX pad init at boot and
+  need the port's registers to answer (as they do inside the CXD8530 on real boards),
+  but no PlayStation controller protocol is implemented — arcade inputs are read by the
+  C76 MCU.
 
 ## Hardware Requirements
 
-A MiSTer with an **SDRAM module (32 MB minimum)** is required. The core keeps the game program, banked data ROM (up to 16 MB), C76 sound program, and C352 wave ROM (up to 4 MB) in SDRAM, with the load map extending to roughly 30 MB.
+A MiSTer with an **SDRAM module (64 MB minimum)** is required (up from 32 MB in the previous release). The core keeps the game program, banked data ROM (up to 32 MB with rom8_64 banking), C76 sound program, and C352 wave ROM (up to 4 MB) in SDRAM, with the load map extending to roughly 45 MB.
 
 ## Building from Source
 
@@ -108,7 +129,8 @@ The project targets **Quartus 17.0.x** (Lite Edition works). Open `SYSTEM11.qpf`
 quartus_sh --flow compile SYSTEM11
 ```
 
-The output `XNSYSTEM11_20260712.rbf` appears in `output_files/`.
+The output `output_files/SYSTEM11.rbf` should be renamed to
+`XNSYSTEM11_20260713.rbf` when placed in `_Arcade/cores/`.
 
 ## Credits
 
@@ -119,7 +141,13 @@ The output `XNSYSTEM11_20260712.rbf` appears in `output_files/`.
 
 ## License
 
-This project is licensed under the **GNU General Public License, version 2 (GPL-2.0)** — see the [LICENSE](LICENSE) file. It is a derived work of PSX_MiSTer by Robert Peip, and the upstream license terms carry over to this project; the same terms apply to any redistribution or derived work of this core.
+The combined work is conveyed under the **GNU General Public License, version 3 or (at your option) any later version** — see [LICENSE](LICENSE), with the full texts in [COPYING.GPL2](COPYING.GPL2) and [COPYING.GPL3](COPYING.GPL3).
+
+Most of the tree — the PSX_MiSTer base by Robert Peip that this project derives from, and this project's own System 11 hardware implementations — is *GPLv2 or any later version*. However, several files inherited from the MiSTer framework and the PSX_MiSTer base (`rtl/hps_ext.v`, `rtl/ddram.sv`, `rtl/sdram.sv`, `sys/hps_io.sv`, `sys/scandoubler.v`, `sys/ddr_svc.sv`, `sys/sd_card.sv`) are *GPLv3 or any later version*. GPLv2-or-later code may be used under v3, but GPLv3 code cannot be conveyed under v2 — so the **combination** must be distributed under GPLv3+. Each individual file remains available to you under the terms stated in its own header.
+
+`sys/ascal.vhd` (Avalon Scaler, TEMLIB) is distributed by its author under permissive, GPL-compatible terms. The Quartus-generated PLL wrappers carry Intel/Altera copyright notices and are redistributed as generated, as in every MiSTer core.
+
+Any redistribution or derived work of this core carries the same obligations: ship the corresponding source, keep the license notices intact, and convey under GPLv3+.
 
 ## Legal
 
