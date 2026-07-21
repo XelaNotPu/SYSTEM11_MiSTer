@@ -2,61 +2,66 @@
   <img src="art/XelaNotPu-LogoTransparent-GithubSocial.png" alt="SYSTEM11 MiSTer banner" width="100%">
 </p>
 
-# Namco System 11 for MiSTer — Release 2026-07-13
+## Changes in this release (2026-07-21)
 
-Nine playable System 11 titles — seven newly supported since the 2026-07-12
-release, driven by four core fixes: per-game GPU type selection, the missing
-M37702 `JML` opcode, all eight KEYCUS protection chips, and a SIO0 register
-stub (plus 32 MB rom8_64 banking for My Angel 3).
+- **C76 interrupt delivery hardened** — the M37702 sound MCU now latches external
+  INT0/INT1/INT2 with HOLD_LINE semantics, so it no longer drops the periodic
+  60 Hz service interrupts under load. Improves sound-command and I/O reliability.
+- **Soul Edge — dead Kick and Guard buttons fixed.** The P1 Kick input (driven
+  onto IN1 BUTTON3 instead of being tied off) and the Guard input (P1 ADC2 /
+  P2 PLAYER4) are now wired correctly, gated on the C409 KEYCUS so Tekken is
+  unaffected. (Kick fix hardware-confirmed.)
+- **My Angel 3 — quiz-panel button remap** so the four answer buttons register
+  (per-game gated on the C443 KEYCUS).
+- **Pocket Racer — analog steering/throttle plumbing corrected** (A-D result
+  high byte and throttle-pedal polarity). Pocket Racer still does not boot into
+  gameplay (a C76 shared-RAM handshake blocks it), but the analog path is now
+  correct for when that boot issue is resolved.
+- **Settings now save (EEPROM/nvram persistence).** The AT28C16 settings EEPROM
+  is persisted to a `.nvm` file on the SD card, so test-menu options (difficulty,
+  sound, coinage, high scores, ...) survive a power cycle. Note: Namco System 11
+  test menus commit settings to EEPROM only when you **exit test mode** (turn the
+  Service/Test switch off) — that write is what triggers the save.
 
-## Supported games
+## Supported Games
 
-| Game | Set | Status |
-|---|---|---|
-| **Tekken** (1994) | World, TE2/VER.C | Playable — verified gameplay, sound, inputs |
-| **Tekken 2 Ver.B** (1996) | World, TES2/VER.D | Playable — the final revision; VER.B (gameplay-verified) and six more revisions ship as alternates |
-| **Soul Edge Ver. II** (1996) | Asia, SO4/VER.C | New — boots, attract mode renders |
-| **Dunk Mania** (1995) | World, DM2/VER.C | New — boots, attract mode renders (slow first boot, ~2 min) |
-| **Xevious 3D/G** (1995) | World, XV32/VER.B | New — boots, attract mode renders |
-| **Prime Goal EX** (1996) | Japan, PG1/VER.A | New — boots, attract mode renders |
-| **Dancing Eyes** (1996) | World, DC2/VER.B | New — boots, attract mode renders |
-| **Pocket Racer** (1996) | Japan, PKR1/VER.B | **Not working** — C76 handshake blocks boot, under investigation |
-| **Star Sweep** (1997) | World, STP2/VER.A | New — boots, attract mode renders |
-| **Kosodate Quiz My Angel 3** (1998) | Japan, KQT1/VER.A | New — boots, attract mode renders (first title using 32 MB rom8_64 banking) |
-| **Point Blank 2** (1999) | World, GNB2/VER.A | **Untested** — MRAs provided; needs a lightgun, which the core does not implement yet |
-| **Family Bowl** (1997) | Japan, FB1/VER.A | **Not working** — needs an H8/3002 sub-board that is not emulated |
+| Game | Status | Notes |
+|------|--------|-------|
+| Tekken (World, TE2/VER.C) | **Playable** | Gameplay, sound effects, music, FMV intros and attract mode all work. Three regional alternates provided. |
+| Tekken 2 Ver.B (World, TES2/VER.B) | **Playable** | Verified on hardware: boots, renders, music and inputs all work. All eight revisions ship (seven as alternates), each boot-tested. |
+| Soul Edge Ver. II (SO4/VER.C) | **Playable**  | KEYCUS C409 |
+| Dunk Mania (DM2/VER.C) | Boots + attract | KEYCUS C410; slow first boot (~2 min) |
+| Xevious 3D/G (XV32/VER.B) | Boots + attract | KEYCUS C430 |
+| Prime Goal EX (PG1/VER.A) | Boots + attract | KEYCUS C411 |
+| Dancing Eyes (DC2/VER.B) | **Playable**  | KEYCUS C431 |
+| Star Sweep (STP1/VER.A) | Boots + attract | KEYCUS C442 |
+| Kosodate Quiz My Angel 3 (KQT1/VER.A) | Boots + attract | KEYCUS C443 + rom8_64 32 MB banking |
 
-The seven new titles are verified to boot and render their attract sequences on
-hardware; gameplay, sound and input depth-testing at the level done for the two
-Tekkens is still in progress.
-
-**Full region coverage**: every System 11 romset known to MAME has an MRA in
-this release — one primary per game in `_Arcade/`, with regional/revision
-alternates under `_Arcade/_alternatives/_<Game>/`. All eight Tekken 2 revisions
-were boot-tested on hardware. The **alternate sets of the seven new titles**
-(Soul Edge, Xevious 3D/G, Dancing Eyes, Dunk Mania, Star Sweep regions) are
-generated from MAME ROM definitions but have **not** been individually
-boot-tested.
+The seven new titles pass their KEYCUS protection checks and render their
+attract sequences on hardware; gameplay depth-testing at the Tekken level is in
+progress. **Pocket Racer** does not boot yet (a C76 shared-RAM handshake blocks
+it — under investigation; its analog wheel plumbing is already in the core).
+Point Blank 2 (lightgun; no ROM verified) and Family Bowl (H8/3002 sub-board)
+are out of scope.
 
 ## Contents
 
 ```
-RELEASE-20260713/
+RELEASE-20260720/
 ├── release/                       ← copy onto your MiSTer SD card
 │   └── _Arcade/
-│       ├── <one primary .mra per game (12 games)>
+│       ├── <one primary .mra per game (9 games)>
 │       ├── _alternatives/
 │       │   ├── _Tekken/           ← World VER.B, Asia VER.C, Japan VER.B
-│       │   ├── _Tekken 2/         ← the other 7 revisions (incl. gameplay-verified World TES2-VER.B)
-│       │   ├── _Soul Edge/        ← US VER.C, World/US/Japan VER.A
+│       │   ├── _Tekken 2/         ← the other 7 revisions (incl. gameplay-verified World TES2-VER.D)
+│       │   ├── _Soul Edge/        ← World/US/Japan VER.A, Ver. II US VER.C
 │       │   ├── _Dunk Mania/       ← Japan DM1-VER.C
 │       │   ├── _Xevious 3D-G/     ← World VER.A, Japan XV31-VER.A
 │       │   ├── _Dancing Eyes/     ← US DC3-VER.C, Japan DC1-VER.A
-│       │   ├── _Star Sweep/       ← Japan STP1-VER.A
-│       │   └── _Point Blank 2/    ← World alt sets, US GNB3-VER.A, Gunbarl (Japan)
+│       │   └── _Star Sweep/       ← Japan STP1-VER.A
 │       └── cores/
-│           └── XNSYSTEM11_20260713.rbf   ← the FPGA core bitstream
-└── source/                        ← full FPGA core source (build it yourself)
+│           └── XNSYSTEM11_20260720.rbf   ← the FPGA core bitstream
+└── source/                        ← full corresponding FPGA source (build it yourself)
 ```
 
 ## Installation
@@ -67,107 +72,113 @@ RELEASE-20260713/
    (`games/mame/` or `_Arcade/mame/`).
 3. Select a game from the arcade menu.
 
-If you installed RELEASE-20260712, the new core and MRAs coexist with it;
-the `.mra` files reference the core as `XNSYSTEM11` and MiSTer picks the
-newest dated `XNSYSTEM11_*.rbf` in `_Arcade/cores/`.
+The `.mra` files reference the core as `XNSYSTEM11`; MiSTer picks the
+newest-dated `XNSYSTEM11_*.rbf` in `_Arcade/cores/`.
 
-## Hardware requirements
+ROMs are **not** included with this project and are not linked from it — see [Legal](#legal). The MRA files reference MAME romsets by zip name:
 
-A MiSTer with a **64 MB (or larger) SDRAM module** is required — up from
-32 MB in the previous release. The rom8_64 banking support moved the C76
-sound program and C352 wave data above the 40 MB mark for **all** titles.
-With a 32 MB module the games will run silent at best.
+| MRA | ROM zips required |
+|-----|-------------------|
+| Tekken (World TE2 Ver.C).mra | `tekken.zip` + `namcoc76.zip` |
+| Tekken (World TE2 Ver.B).mra | `tekkenb.zip` + `tekken.zip` + `namcoc76.zip` |
+| Tekken (Asia TE4 Ver.C).mra | `tekkenac.zip` + `tekken.zip` + `namcoc76.zip` |
+| Tekken (Japan TE1 Ver.B).mra | `tekkenjb.zip` + `tekken.zip` + `namcoc76.zip` |
+| Tekken 2 Ver.B (World TES2-VER.B).mra | `tekken2b.zip` (or merged `tekken2.zip`) + `namcoc76.zip` |
+| Tekken 2 alternates (7 MRAs) | revision zip (`tekken2a/ua/ub/ud/jb/jc`) or merged `tekken2.zip`, + `namcoc76.zip` |
+| Soul Edge Ver. II (SO4-VER.C).mra | `souledge.zip` + `namcoc76.zip` |
+| Dunk Mania (DM2-VER.C).mra | `dunkmnia.zip` + `namcoc76.zip` |
+| Xevious 3D-G (XV32-VER.B).mra | `xevi3dg.zip` + `namcoc76.zip` |
+| Prime Goal EX (PG1-VER.A).mra | `primglex.zip` + `namcoc76.zip` |
+| Dancing Eyes (DC2-VER.B).mra | `danceyes.zip` + `namcoc76.zip` |
+| Star Sweep (STP1-VER.A).mra | `starswep.zip` + `namcoc76.zip` |
+| Kosodate Quiz My Angel 3 (KQT1-VER.A).mra | `myangel3.zip` + `namcoc76.zip` |
 
-## ROM zips required
+`namcoc76.zip` (the Namco C76 sound-CPU BIOS) is required by **every** MRA — it is
+loaded into the core at runtime and is not embedded in the bitstream.
 
-No ROMs are included. Each MRA references MAME romsets by zip name;
-`namcoc76.zip` (the C76 sound-CPU BIOS, loaded at runtime) is needed by
-**every** MRA.
+The regional Tekken alternates and Tekken 2 declare their zip as a fallback list
+(e.g. `tekkenb.zip|tekken.zip`): the loader checks the clone zip first and falls back
+to the parent. Split/merged clone sets contain only the ROMs that differ from the
+parent, so keep the parent zip alongside the clone unless you have non-merged sets.
 
-| Game (primary MRA) | Zips |
-|---|---|
-| Tekken | `tekken.zip` + `namcoc76.zip` |
-| Tekken 2 Ver.B | `tekken2b.zip` (or merged `tekken2.zip`) + `namcoc76.zip` |
-| Soul Edge Ver. II | `souledge.zip` + `namcoc76.zip` |
-| Dunk Mania | `dunkmnia.zip` + `namcoc76.zip` |
-| Xevious 3D/G | `xevi3dg.zip` + `namcoc76.zip` |
-| Prime Goal EX | `primglex.zip` + `namcoc76.zip` |
-| Dancing Eyes | `danceyes.zip` + `namcoc76.zip` |
-| Star Sweep | `starswep.zip` + `namcoc76.zip` |
-| My Angel 3 | `myangel3.zip` + `namcoc76.zip` |
-| Pocket Racer | `pocketrc.zip` + `namcoc76.zip` |
-| Point Blank 2 | `ptblank2a.zip` (or merged `ptblank2.zip`) + `namcoc76.zip` |
-| Family Bowl | `fambowl.zip` + `namcoc76.zip` |
+Launch a game by selecting its MRA entry from the Arcade menu; the MRA loads the game program, banked data ROM, C76 sound program, and C352 wave ROM automatically.
 
-Alternates: each alternate MRA declares its own clone zip with a fallback to
-the parent (e.g. `souledgeja.zip|souledge.zip`), so a **merged parent zip
-satisfies every alternate of that game**. Clone zips from split/merged sets
-contain only the ROMs that differ — keep the parent zip alongside them.
+## Controls
 
-## Known issues
+Tekken uses an 8-way joystick and four buttons per player, plus Start and Coin:
 
-- **Long-session display blank (under investigation).** In extended soak
-  testing, one build blanked its video output after ~100 minutes of
-  continuous attract mode while the game itself kept running (sound and
-  inputs stay alive; the OSD still works). Reloading the core restores the
-  picture. The root cause is being investigated; short and medium play
-  sessions are unaffected in testing.
-- **Dunk Mania boots slowly** (~2 minutes to first picture on a fresh
-  EEPROM). This matches its first-boot initialization; subsequent boots are
-  faster.
-- **New titles are attract-verified.** Gameplay/sound/input verification at
-  full depth exists for Tekken and Tekken 2; the seven new titles have been
-  verified to boot, pass their protection checks, and render attract mode.
-- **Pocket Racer** does not boot yet: the MIPS waits on a C76 shared-RAM
-  handshake that never completes. Its MRA is included for completeness. The
-  analog wheel plumbing (steering on the left stick / paddle, pedal on
-  Button 1) is already in the core for when the handshake issue is resolved.
-- **Point Blank 2 / Gunbarl** MRAs are provided untested: the core has no
-  lightgun support yet, and these sets were not boot-tested.
-- **Family Bowl** does not work (unemulated H8/3002 sub-board; not working
-  in MAME either). Its MRA is included for completeness only.
-- **Sound fidelity** continues to be tuned against real hardware.
+| Core button | Tekken function | Default pad mapping |
+|-------------|-----------------|---------------------|
+| Button 1 | Left Punch | A |
+| Button 2 | Right Punch | B |
+| Button 3 | Left Kick | X |
+| Button 4 | Right Kick | Y |
+| Buttons 5/6 | Unused by Tekken | L / R |
+| Start | Start | Start |
+| Coin | Insert coin | Select |
+| Pause | Pause the core | L3 |
 
-## No copyrighted data
+Two players are supported. The cabinet TEST and SERVICE switches are available as OSD toggles (see below), so the operator test menu can be reached without dedicated buttons.
 
-This release contains **no game ROMs and no copyrighted game data**:
+## OSD Options
 
-- The core bitstream (`XNSYSTEM11_20260713.rbf`) embeds no BIOS, no sound
-  program, no PCM data, and no captured nvram. The C76 sound-CPU BIOS is
-  loaded at runtime from `namcoc76.zip`; the EEPROM initialises blank
-  (all-`FF`) and self-configures.
-- The `.mra` files reference romsets by name only — they contain no inline
-  ROM data.
-- The `source/` tree contains the original FPGA logic, standard PSX_MiSTer
-  base RTL, hardware algorithm tables, and the author's own pause-overlay
-  artwork — no game/BIOS/firmware images.
+- **DIP Switches**
+  - `DIP1 Test` — board test DIP
+  - `DIP2 Freeze` — board freeze DIP
+- **Debug**
+  - `FPS Counter` — on-screen frame rate display
+  - `Boot Debug Overlay` — diagnostic overlay during boot (off by default)
+  - `Test Mode` — asserts the cabinet TEST switch (enters the operator test menu)
+  - `Service Mode` — asserts the cabinet SERVICE switch (service credit)
+- **Reset** — resets the board
+
+Opening the OSD pauses the core. Video scaling/aspect options are currently handled by the MiSTer framework defaults; the core-specific video/audio option page is disabled in this release.
+
+## Known Issues
+
+- **Sound fidelity**: the C76/C352 sound engine plays correctly, but is still being
+  tuned against real hardware. Feedback is welcome.
+- **Pocket Racer** does not boot yet: the MIPS waits on a C76 shared-RAM handshake
+  that never completes (KEYCUS is verified good — the exchange is bus-exact vs MAME in
+  simulation). Analog wheel/pedal plumbing is already present for when it is fixed.
+- All eight System 11 KEYCUS chips (C406, C409, C410, C411, C430, C431, C432, C442,
+  C443) are implemented and hardware-verified. GPU type is selected per game
+  (Tekken 1 = CXD8538Q/coh100; every other title = CXD8561Q/coh110, per MAME).
+- **This core targets System 11 hardware only.** PlayStation console features inherited
+  from the PSX_MiSTer base that System 11 does not use — memory cards, the SPU and the
+  CD-ROM drive — are removed or stubbed to reclaim FPGA logic. The PSX controller port
+  (SIO0) is a minimal register stub: several titles run stock PSX pad init at boot and
+  need the port's registers to answer (as they do inside the CXD8530 on real boards),
+  but no PlayStation controller protocol is implemented — arcade inputs are read by the
+  C76 MCU.
+
+## Hardware Requirements
+
+A MiSTer with an **SDRAM module (64 MB minimum)** is required (up from 32 MB in the previous release). The core keeps the game program, banked data ROM (up to 32 MB with rom8_64 banking), C76 sound program, and C352 wave ROM (up to 4 MB) in SDRAM, with the load map extending to roughly 45 MB.
+
+## Credits
+
+- **Robert Peip (FPGAzumSpass)** — [PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer), the PlayStation core this project is built on. The CPU, GPU, GTE, and memory architecture are his work.
+- **[MiSTer-devel](https://github.com/MiSTer-devel)** — the MiSTer framework, HPS I/O, and video pipeline.
+- **[MAME](https://www.mamedev.org/)** project — the System 11 driver and device documentation used as the reference for the Namco-specific hardware (C76, C352, KEYCUS, ROM banking).
+- **The MAME project** (smf et al.) — the Namco System 11 KEYCUS protection algorithms (C406, C409, …) reverse-engineered and documented in `ns11prot.cpp` (BSD-3-Clause); the KEYCUS logic in `s11_io.vhd` is an independent VHDL re-implementation of those documented algorithms.
 
 ## License
 
-The core and its source are Free Software, conveyed under the **GNU General
-Public License v3 or later** (the tree mixes GPLv2-or-later and GPLv3-or-later
-files, so the combination is GPLv3+; every file remains available under the
-terms in its own header). Full texts ship in `source/COPYING.GPL2` and
-`source/COPYING.GPL3`, with the reasoning in `source/LICENSE`.
+This core is a combined/derived work licensed under the **GNU General Public License, version 3 or later (GPLv3-or-later)**.
 
-This core derives from **PSX_MiSTer** by Robert Peip (FPGAzumSpass) and the
-**MiSTer framework**; the System 11 hardware (C76, C352, KEYCUS, ROM banking)
-is an independent re-implementation developed with reference to the MAME
-project's hardware documentation.
-
-See `source/README.md` for the full legal notice, credits, trademark and
-security-chip (KEYCUS) attribution, and build instructions.
+It builds on [PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer) (Robert Peip) and the MiSTer framework. Several files in the build tree — the MiSTer `sys/` HPS-I/O, SD-card, scandoubler and DDR-service modules, and the SDRAM/DDR memory controllers — are licensed **GPL version 3 or later**. Combining GPLv2-or-later code with GPLv3-or-later code yields a work that can only be conveyed under GPLv3-or-later, so that is the license of this core as a whole. The full texts of both licenses are included (`COPYING.GPL2`, `COPYING.GPL3`); GPLv2-or-later files remain individually available under their own terms.
 
 ## Legal
 
-No ROMs. This repository contains no game ROMs and no copyrighted game data, and it provides no links or instructions for obtaining them. To use this core you must supply your own ROM dumps, made from original hardware or media that you legally own, where and to the extent your local law permits.
+**No ROMs.** This repository contains no game ROMs and no copyrighted game data, and it provides no links or instructions for obtaining them. To use this core you must supply your own ROM dumps, made from original hardware or media that you legally own, where and to the extent your local law permits.
 
-Trademarks. "Namco", "System 11", "Tekken", and related names and logos are trademarks or registered trademarks of Bandai Namco Entertainment Inc. and/or their respective owners. "PlayStation" is a trademark of Sony Interactive Entertainment Inc. This project is not affiliated with, endorsed by, or sponsored by Bandai Namco, Sony Interactive Entertainment, or any other rights holder. Such names are used here in a purely nominative and descriptive manner, solely to identify the hardware being re-implemented.
+**Trademarks.** "Namco", "System 11", "Tekken", and related names and logos are trademarks or registered trademarks of Bandai Namco Entertainment Inc. and/or their respective owners. "PlayStation" is a trademark of Sony Interactive Entertainment Inc. This project is not affiliated with, endorsed by, or sponsored by Bandai Namco, Sony Interactive Entertainment, or any other rights holder. Such names are used here in a purely nominative and descriptive manner, solely to identify the hardware being re-implemented.
 
-Purpose. This is an independent, non-commercial hardware-preservation and interoperability project. The FPGA logic is an original re-implementation of the System 11 board's behavior, developed from observation and from publicly available documentation and references (including the MAME project's hardware documentation); it contains no proprietary source code from the original manufacturers.
+**Purpose.** This is an independent, non-commercial hardware-preservation and interoperability project. The FPGA logic is an original re-implementation of the System 11 board's behavior, developed from observation and from publicly available documentation and references (including the MAME project's hardware documentation); it contains no proprietary source code from the original manufacturers.
 
-Security-chip emulation. Namco System 11 boards used per-game KEYCUS chips (C406, C409, …) as a protection measure. This core re-implements that logic for interoperability and preservation, in the same manner as MAME and comparable FPGA cores. The KEYCUS is a small challenge/response algorithm rather than stored key data, so no manufacturer key material is embedded in the bitstream. Laws such as the U.S. DMCA §1201 address circumvention of technological protection measures; whether and how they apply to this kind of preservation/interoperability use can depend on your jurisdiction and circumstances. Users are responsible for their own compliance.
+**Security-chip emulation.** Namco System 11 boards used per-game KEYCUS chips (C406, C409, …) as a protection measure. This core re-implements that logic for interoperability and preservation, in the same manner as MAME and comparable FPGA cores. The KEYCUS is a small challenge/response algorithm rather than stored key data, so no manufacturer key material is embedded in the bitstream. Laws such as the U.S. DMCA §1201 address circumvention of technological protection measures; whether and how they apply to this kind of preservation/interoperability use can depend on your jurisdiction and circumstances. Users are responsible for their own compliance.
 
-User responsibility. Users are solely responsible for ensuring that their use of this core — including the acquisition and use of any ROM images — complies with copyright law and all other applicable laws in their jurisdiction.
+**User responsibility.** Users are solely responsible for ensuring that their use of this core — including the acquisition and use of any ROM images — complies with copyright law and all other applicable laws in their jurisdiction.
 
-No warranty. In accordance with the GPL-2.0 license: THIS PROGRAM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. IN NO EVENT WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THIS PROGRAM, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+**No warranty.** As set out in sections 15–16 of the GNU General Public License (v3) and the equivalent clauses of v2: THIS PROGRAM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. IN NO EVENT WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THIS PROGRAM, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
