@@ -412,6 +412,13 @@ wire [26:0] ioctl_addr;
 wire [15:0] ioctl_dout;
 wire        ioctl_wr;
 wire  [7:0] ioctl_index;
+// nvram (AT28C16 EEPROM / settings) save path
+wire        ioctl_upload;
+wire [15:0] ioctl_din;
+reg         ioctl_upload_req = 0;
+wire  [7:0] ioctl_upload_index = 8'd9;   // nvram is MRA index 9
+wire [31:0] ee_up_q;                     // EEPROM BRAM word read-back (from zn1_io) for the save
+wire        ee_wr_pulse;                 // MIPS wrote the EEPROM (debounced below to request a save)
 reg         ioctl_wait = 0;
 
 wire [19:0] joy;
@@ -482,6 +489,12 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
 	.ioctl_download(ioctl_download),
 	.ioctl_index(ioctl_index),
 	.ioctl_wait(ioctl_wait),
+
+	// nvram (EEPROM/settings) save path
+	.ioctl_upload(ioctl_upload),
+	.ioctl_upload_req(ioctl_upload_req),
+	.ioctl_upload_index(ioctl_upload_index),
+	.ioctl_din(ioctl_din),
 
 	.sd_lba('{sd_lba0, sd_lba1, sd_lba2, sd_lba3}),
 	.sd_blk_cnt('{0,0, 0, 0}),
@@ -575,20 +588,49 @@ always @(posedge clk_1x) begin
    end
 end
 reg        wave_download       = 0;
-// EEPROM blank-image (all-FF) download: MRA index 9 ships 4096 bytes -> 1024 words.
-// Writer packs 4 ioctl bytes into one 32-bit word at ioctl_addr[11:2] and issues an
-// ee_dl_wr into the zn1_io EEPROM BRAM. Since the MRA ships all-FF, ee_dl_data is
-// naturally 0xFFFFFFFF; we write it directly (no proprietary nvram data involved).
+// ---------------------------------------------------------------------------
+// EEPROM / nvram (AT28C16 settings) LOAD + SAVE.
+// MRA index 9 is now an <nvram size="4096"> (was an all-FF <rom>). On a fresh
+// board no .nvram exists so nothing is downloaded and the BRAM keeps its all-FF
+// init (eeprom_ff.mif). If a saved .nvram exists the framework downloads it here.
+// WIDE(1): each ioctl_wr carries a 16-bit halfword; ioctl_addr[1] picks lo/hi of
+// the 32-bit BRAM word, so accumulate the low half then write the full word.
 reg        eeprom_download     = 0;
 reg        ee_dl_wr   = 0;
 reg [9:0]  ee_dl_addr;
 reg [31:0] ee_dl_data;
+reg [15:0] ee_dl_lo;
 always @(posedge clk_1x) begin
 	ee_dl_wr <= 0;
 	if (eeprom_download & ioctl_wr) begin
-		ee_dl_addr <= ioctl_addr[11:2];   // 4096 bytes / 4 = 1024 words
-		ee_dl_data <= 32'hFFFFFFFF;       // MRA ships all-FF blank
-		ee_dl_wr   <= 1;
+		if (~ioctl_addr[1]) begin
+			ee_dl_lo <= ioctl_dout;                 // low halfword of the word
+		end else begin
+			ee_dl_addr <= ioctl_addr[11:2];
+			ee_dl_data <= {ioctl_dout, ee_dl_lo};   // {hi, lo} -> full 32-bit word
+			ee_dl_wr   <= 1;
+		end
+	end
+end
+
+// nvram SAVE read-back: during an index-9 upload, mux the EEPROM BRAM read address
+// to ioctl_addr and return the selected halfword. SPI byte cadence >> the M10K read
+// latency, so the word is settled by the time hps_io samples ioctl_din.
+wire       ee_up_rd   = ioctl_upload & (ioctl_index == 8'd9);
+wire [9:0] ee_up_addr = ioctl_addr[11:2];
+assign     ioctl_din  = ee_up_rd ? (ioctl_addr[1] ? ee_up_q[31:16] : ee_up_q[15:0]) : 16'h0000;
+
+// Auto-save trigger: ~1.5 s after the LAST EEPROM write settles, pulse ioctl_upload_req
+// so a batch of setting changes results in a single .nvram write-back. clk_1x ~ 33 MHz.
+localparam [26:0] EE_SAVE_DELAY = 27'd50_000_000;   // ~1.5 s
+reg [26:0] ee_save_timer = 0;
+always @(posedge clk_1x) begin
+	ioctl_upload_req <= 0;
+	if (ee_wr_pulse) begin
+		ee_save_timer <= EE_SAVE_DELAY;             // (re)arm on each write
+	end else if (ee_save_timer != 0) begin
+		ee_save_timer <= ee_save_timer - 1'd1;
+		if (ee_save_timer == 27'd1) ioctl_upload_req <= 1;   // fire once when it expires
 	end
 end
 always @(posedge clk_1x) begin
@@ -1065,13 +1107,30 @@ c76_sound c76snd
    .mips_addr(mb_mips_addr), .mips_din(mb_mips_wdata), .mips_dout(mb_mips_rdata), .mips_wr(mb_mips_we),
    // 2026-07-06 INPUT FIX: System 11 inputs are read by the C76 (MAME c76_map 0x1000-0x1007)
    // and relayed to the MIPS via shared RAM — they were tied off (nothing could ever be
-   // pressed, no coins). Active-low, layout per MAME namcos11.cpp INPUT_PORTS (tekken):
-   //   PLAYER1/2: b7=START b5=BTN2(RP) b4=BTN1(LP) b3=UP b2=DOWN b1=LEFT b0=RIGHT
-   //   SWITCH:    b7=SERVICE1 b6=TEST b5=COIN1 b4=COIN2 b1:b0=DIPs (off=1)
-   //   PLAYER4:   b4=P2 BTN3(LK) b5=P2 BTN4(RK) (P1 kicks travel on ADC ch2/ch1)
-   .in_player1(~{joy[10],  1'b0, joy[5],  joy[4],  joy[3],  joy[2],  joy[1],  joy[0]}),
-   .in_player2(~{joy2[10], 1'b0, joy2[5], joy2[4], joy2[3], joy2[2], joy2[1], joy2[0]}),
-   .in_player4(~{2'b00, joy2[7], joy2[6], 4'b0000}),
+   // pressed, no coins). Active-low. in_player1 IS the game's IN1[15:8] byte:
+   //   b7=START b6=IN1.0x4000 b5=IN1.0x2000 b4=IN1.0x1000 b3=UP b2=DOWN b1=LEFT b0=RIGHT
+   //   SWITCH:  b7=SERVICE1 b6=TEST b5=COIN1 b4=COIN2 b1:b0=DIPs (off=1)
+   //   PLAYER4: b4=P2 BTN3(LK) b5=P2 BTN4(RK) (Tekken P1 kicks travel on ADC ch2/ch1)
+   // 2026-07-18 SOUL EDGE KICK FIX: b6 (game IN1 0x4000) was hardcoded 1'b0 because it is
+   //   IPT_UNUSED in the tekken port layout. But souledge (and the generic namcos11 games
+   //   dunkmnia/danceyes/xevi3dg/starswep) map BUTTON3 there — for Soul Edge that is the KICK,
+   //   which was therefore permanently unpressed. Drive it with Button3 (joy[6]/joy2[6]).
+   //   Harmless to Tekken (0x4000 is UNUSED there; joy[6] already also feeds ADC ch2), so no
+   //   per-game gating is needed.
+   // My Angel 3 (keycus_id 0x09) PORT_MODIFY("PLAYER1"): 0x08=BTN1 0x04=BTN2 0x02=BTN3 0x01=BTN4
+   // (the base joystick-direction bits become the 4 quiz buttons). Remap the low nibble to
+   // Button1-4 (joy[4..7]) for 0x09; keep U/D/L/R (joy[3..0]) for every other game.
+   // NOTE: keycus 0x09 is shared with the (non-functional, no gun support) light-gun titles
+   // ptblank2/gunbarl — harmless there since those don't run.
+   .in_player1(~{joy[10],  joy[6],  joy[5],  joy[4],
+                 (zn_keycus_id == 8'h09) ? {joy[4],  joy[5],  joy[6],  joy[7]}  : {joy[3],  joy[2],  joy[1],  joy[0]}}),
+   .in_player2(~{joy2[10], joy2[6], joy2[5], joy2[4],
+                 (zn_keycus_id == 8'h09) ? {joy2[4], joy2[5], joy2[6], joy2[7]} : {joy2[3], joy2[2], joy2[1], joy2[0]}}),
+   // PLAYER4: bit4 (0x10) = Tekken P2 kick (joy2[6]) / Soul Edge P2 Guard (C409 0x02 -> joy2[7]);
+   //          bit3 (0x08) = Pocket Racer (C432 0x07) BUTTON2 = view toggle (joy[5]) per MAME
+   //          PORT_MODIFY("PLAYER4") 0x08; else unused.
+   .in_player4(~{2'b00, joy2[7], (zn_keycus_id == 8'h02) ? joy2[7] : joy2[6],
+                 (zn_keycus_id == 8'h07) ? joy[5] : 1'b0, 3'b000}),
    .in_switch (~{status[95], status[94], joy[11], joy2[11], 2'b00, status[96], status[97]}),
    // Pocket Racer (KEYCUS C432): AN0 = steering (PADDLE centre 0x80, legal 0x38-0xC8,
    // reversed per MAME) from the left analog stick X, AN1 = throttle pedal (0x00
@@ -1079,10 +1138,17 @@ c76_sound c76snd
    // past its legal max -> the C76 flags a fault at shram 0xBD32 and the game never
    // boots. All other games keep the Tekken kick mapping on AN1/AN2 and 0xFF on AN0.
    .in_adc0   ((zn_keycus_id == 8'h07) ? (8'h80 - {prc_stick[7], prc_stick[7:1]}) : 8'hFF),
-   .in_adc1   ((zn_keycus_id == 8'h07) ? (joy[4] ? 8'h7F : 8'h00)
-                                       : (joy[7] ? 8'h00 : 8'hFF)),   // P1 BTN4 (right kick) — analog, active low
+   // Pocket Racer AN1 = throttle PEDAL. MAME's ADC1 is IPT_PEDAL + PORT_REVERSE (MINMAX 0x00-0x7F),
+   // so a RELEASED pedal reads 0x7F, full = 0x00. We had it inverted (released=0x00) -> the C76 saw
+   // the pedal pinned "fully pressed" at boot (stuck-pedal) and never published the input-ready bit
+   // at shram 0xBD32 -> MIPS hung at 0x80018C9C. Released = 0x7F, Button1 (accel) = 0x00.
+   .in_adc1   ((zn_keycus_id == 8'h07) ? (joy[4] ? 8'h00 : 8'h7F)
+                                       : (joy[7] ? 8'h00 : 8'hFF)),   // else: Tekken P1 BTN4 (right kick)
+   // ADC2: Tekken = P1 BTN3 left kick (joy[6]); Soul Edge (C409, id 0x02) maps P1 BUTTON4
+   // (Guard) to ADC2 per MAME PORT_MODIFY("ADC2") -> use joy[7] (Button4). Pocket Racer = idle.
    .in_adc2   ((zn_keycus_id == 8'h07) ? 8'hFF
-                                       : (joy[6] ? 8'h00 : 8'hFF)),   // P1 BTN3 (left kick)
+               : (zn_keycus_id == 8'h02) ? (joy[7] ? 8'h00 : 8'hFF)    // Soul Edge: ADC2 = P1 Guard
+                                         : (joy[6] ? 8'h00 : 8'hFF)),  // Tekken: ADC2 = P1 BTN3 (left kick)
    .sprog_addr(c76_sprog_addr), .sprog_data(c76_sprog_data), .sprog_rd(c76_sprog_rd), .sprog_ready(c76_sprog_ready),
    .wave_addr(c76_wave_addr), .wave_data(c76_wave_data), .wave_rd(c76_wave_rd), .wave_ready(c76_wave_ready),
    .dbg_c352_wrcnt(c352_wrcnt), .dbg_keyon_cnt(c352_keyoncnt),
@@ -1544,9 +1610,13 @@ psx
    .zn_platform    (zn_platform_r[3:0]),
    .zn_system11    (zn_platform_r[4]),   // MRA platform byte bit4 = Namco System 11 mode
    .keycus_id      (zn_keycus_id),       // MRA index-1 byte[1]: 0=none, 1=C406 (Tekken 2)
-   .ee_dl_wr       (ee_dl_wr),           // MRA index 9: EEPROM all-FF blank download
+   .ee_dl_wr       (ee_dl_wr),           // MRA index 9: EEPROM/nvram load
    .ee_dl_addr     (ee_dl_addr),
    .ee_dl_data     (ee_dl_data),
+   .ee_up_rd       (ee_up_rd),           // nvram save: read-back
+   .ee_up_addr     (ee_up_addr),
+   .ee_up_q        (ee_up_q),
+   .ee_wr_pulse    (ee_wr_pulse),
    .mb_mips_addr   (mb_mips_addr),
    .mb_mips_wdata  (mb_mips_wdata),
    .mb_mips_we     (mb_mips_we),
@@ -1729,9 +1799,22 @@ end
 //   mode 7 zn_dbg_procst (bit3 = errfifo_sticky, the GPU fifoIn-overflow detector)
 //   is the Tekken 2 texture instrument — restore it on the T2 branch:
 //     git checkout release/20260712~1 -- SYSTEM11.sv
-wire [31:0] jtag_probe = (jtag_addr[31:28]==4'd1) ? 32'h0BADC0DE :   // mode 1 retired (VRAM readback)
-                         (jtag_addr[31:28]==4'd2) ? zn_dbg_mipspc :  // mode 2 RESTORED 2026-07-13: live MIPS PC (title bring-up triage; port was still wired)
-                         (jtag_addr[31:28]==4'd3) ? 32'h0BADC0DE :   // mode 3 retired (SDRAM ch1/FSM counters)
+// 2026-07-14 BLANK FORENSICS (modes 1 + 3). The blank is: game running (MIPS PC advancing,
+// C76 healthy, GPUSTAT churning) but the screen is black for ~46 min, then it SELF-RECOVERS.
+// Two mutually-exclusive causes, and these two probes separate them decisively:
+//   (a) VRAM went black  -> nothing is being drawn / the framebuffer got wiped
+//   (b) VRAM is fine but the SCANOUT points at the wrong place -> DisplayOffsetY / vramRange
+// mode 1: VRAM[x,y] readback. Latch the coord by writing 0xF|Y<<10|X, then read mode 1.
+//         Nonzero pixels during a blank => VRAM has content => cause (b), a scanout bug.
+//         All-zero across a grid => cause (a), the framebuffer really is black.
+// mode 3: [31:23]=DisplayOffsetY(9) [22:13]=DisplayOffsetX(10) [12:9]=frameindex(4)
+//         [8]=GPUSTAT[23] display-disable [7:0]=0.  These are the exact bits that form
+//         FB_BASE (see the assign above), i.e. where the scaler is told to scan out from.
+//         A wrong DisplayOffsetY (e.g. stuck in the far half of VRAM) *is* cause (b) proven.
+wire [31:0] jtag_probe = (jtag_addr[31:28]==4'd1) ? 32'h0BADC0DE :   // mode 1 stripped for 20260720 release (VRAM readback; probe retained on feature/system11-titles)
+                         (jtag_addr[31:28]==4'd2) ? 32'h0BADC0DE :   // mode 2 stripped for 20260720 release (live MIPS PC; probe retained on feature/system11-titles)
+                         (jtag_addr[31:28]==4'd3) ? 32'h0BADC0DE :   // mode 3 stripped for 20260720 release (display/scanout state; probe retained on feature/system11-titles)
+
                          (jtag_addr[31:28]==4'd4) ? 32'h0BADC0DE :   // mode 4 retired (pause/ce forensics)
                          (jtag_addr[31:28]==4'd5) ? snd_triage :     // mode 5 KEPT: sound triage (c76stat.tcl)
                          (jtag_addr[31:28]==4'd6) ? 32'h0BADC0DE :   // mode 6 retired (C352 voice-reg write)

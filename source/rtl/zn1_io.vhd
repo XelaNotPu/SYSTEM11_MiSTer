@@ -115,12 +115,19 @@ entity zn1_io is
       -- [31:28]=count of writes hitting the 0x10020-0x1002F compare, [27:24]=count of ANY write
       -- with addr(16)=1, [23:16]=last data_write(23:16), [15:8]=last data_write(7:0), [7:0]=last addr(7:0).
       dbg_bankwr     : out std_logic_vector(31 downto 0) := (others => '0');
-      -- EEPROM download port (MRA ioctl index 9, all-FF blank). During ioctl download the
-      -- MIPS is held in reset, so these write straight into the EEPROM BRAM via a combinational
-      -- mux (no bus contention). No proprietary nvram ships; the RAM is filled to 0xFF by the MRA.
+      -- EEPROM download port (MRA nvram index 9). On first boot the BRAM inits to 0xFF (init_file);
+      -- if a saved .nvram exists the framework downloads it here (MIPS held in reset -> no contention).
       ee_dl_wr     : in  std_logic := '0';
       ee_dl_addr   : in  std_logic_vector(9 downto 0) := (others => '0');
-      ee_dl_data   : in  std_logic_vector(31 downto 0) := (others => '0')
+      ee_dl_data   : in  std_logic_vector(31 downto 0) := (others => '0');
+      -- EEPROM upload/read-back port (nvram SAVE): when ee_up_rd=1 the BRAM read address is muxed
+      -- to ee_up_addr and the 32-bit word appears on ee_up_q (single-port; a MIPS EEPROM read during
+      -- the brief save window is a harmless rare glitch).
+      ee_up_rd     : in  std_logic := '0';
+      ee_up_addr   : in  std_logic_vector(9 downto 0) := (others => '0');
+      ee_up_q      : out std_logic_vector(31 downto 0) := (others => '0');
+      -- 1-cycle pulse whenever the MIPS writes the EEPROM (debounced upstream to request a save)
+      ee_wr_pulse  : out std_logic := '0'
    );
 end entity;
 
@@ -339,17 +346,23 @@ begin
    -- UNREGISTERED output: q_a reflects data at address_a with 1 clock cycle latency
    -- (addr sampled at rising edge → q_a valid before next edge), which matches the
    -- BUSREADREQUEST→BUSREAD 2-cycle window in memorymux.
-   -- EEPROM BRAM (AT28C16). NO init_file: power-up state is 0x00, and the MRA (ioctl index 9)
-   -- downloads an all-FF blank into it via ee_dl_wr while the MIPS is held in reset. No
-   -- proprietary captured-nvram data ships in the repo or bitstream. The all-FF fill provides
-   -- the AT28C16 factory state (0xFF) that Taito/Namco titles expect on first read.
-   -- Port-A mux: ee_dl_wr='1' drives the download (whole-word FF write); otherwise the live
-   -- game bus (eeprom_addr_s/data_write/eeprom_wr/write_mask). No contention: the two are
-   -- temporally exclusive (download happens only during ioctl load, MIPS in reset).
-   ee_ram_addr    <= ee_dl_addr   when ee_dl_wr = '1' else eeprom_addr_s;
-   ee_ram_wren    <= '1'          when ee_dl_wr = '1' else eeprom_wr;
-   ee_ram_byteena <= "1111"       when ee_dl_wr = '1' else write_mask;
-   ee_ram_data    <= ee_dl_data   when ee_dl_wr = '1' else data_write;
+   -- EEPROM BRAM (AT28C16). init_file = all-FF (eeprom_ff.mif) so a FRESH board (no saved .nvram)
+   -- powers up to the AT28C16 factory state 0xFF that the titles expect on first read; the all-FF
+   -- image is not proprietary captured-nvram (it is literally blank). If a saved .nvram EXISTS the
+   -- framework downloads it via ee_dl_wr while the MIPS is held in reset (overwriting the FF init).
+   -- Port-A single-port mux, in priority: download write > upload read-back > live game bus.
+   -- The three are temporally exclusive in practice (download only during ioctl load; upload only
+   -- during the brief nvram save; any MIPS EEPROM read coinciding with a save is a rare glitch).
+   ee_ram_addr    <= ee_dl_addr when ee_dl_wr = '1'
+                     else ee_up_addr when ee_up_rd = '1'
+                     else eeprom_addr_s;
+   ee_ram_wren    <= '1'    when ee_dl_wr = '1'
+                     else '0' when ee_up_rd = '1'
+                     else eeprom_wr;
+   ee_ram_byteena <= "1111" when ee_dl_wr = '1' else write_mask;
+   ee_ram_data    <= ee_dl_data when ee_dl_wr = '1' else data_write;
+   ee_up_q        <= eeprom_dout;                       -- read-back for the nvram SAVE upload
+   ee_wr_pulse    <= eeprom_wr;                         -- MIPS EEPROM write (debounced upstream to save)
 
    ieeprom : altsyncram
    generic map (
@@ -359,6 +372,7 @@ begin
       numwords_a          => 1024,
       width_byteena_a     => 4,
       outdata_reg_a       => "UNREGISTERED",
+      init_file           => "eeprom_ff.mif",
       ram_block_type      => "M10K",
       lpm_type            => "altsyncram"
    )

@@ -6,19 +6,43 @@ Namco System 11 (1994) is an arcade board built around Sony PlayStation technolo
 
 The core is derived from the excellent [PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer) core by **Robert Peip (FPGAzumSpass)**, which provides the CPU, GPU, GTE, DMA, and memory subsystem foundation.
 
+## Changes in this release (2026-07-20)
+
+- **C76 interrupt delivery hardened** — the M37702 sound MCU now latches external
+  INT0/INT1/INT2 with HOLD_LINE semantics, so it no longer drops the periodic
+  60 Hz service interrupts under load. Improves sound-command and I/O reliability.
+- **Soul Edge — dead Kick and Guard buttons fixed.** The P1 Kick input (driven
+  onto IN1 BUTTON3 instead of being tied off) and the Guard input (P1 ADC2 /
+  P2 PLAYER4) are now wired correctly, gated on the C409 KEYCUS so Tekken is
+  unaffected. (Kick fix hardware-confirmed.)
+- **My Angel 3 — quiz-panel button remap** so the four answer buttons register
+  (per-game gated on the C443 KEYCUS).
+- **Pocket Racer — analog steering/throttle plumbing corrected** (A-D result
+  high byte and throttle-pedal polarity). Pocket Racer still does not boot into
+  gameplay (a C76 shared-RAM handshake blocks it), but the analog path is now
+  correct for when that boot issue is resolved.
+- **Settings now save (EEPROM/nvram persistence).** The AT28C16 settings EEPROM
+  is persisted to a `.nvm` file on the SD card, so test-menu options (difficulty,
+  sound, coinage, high scores, ...) survive a power cycle. Note: Namco System 11
+  test menus commit settings to EEPROM only when you **exit test mode** (turn the
+  Service/Test switch off) — that write is what triggers the save.
+
+This is a clean release: the forensic JTAG debug probes used during development
+are not present in the shipped bitstream.
+
 ## Supported Games
 
 | Game | Status | Notes |
 |------|--------|-------|
 | Tekken (World, TE2/VER.C) | **Playable** | Gameplay, sound effects, music, FMV intros and attract mode all work. Three regional alternates provided. |
-| Tekken 2 Ver.B (World, TES2/VER.D) | **Playable** | Primary is the final revision (boot-tested); the gameplay-verified World TES2/VER.B and six more revisions ship as alternates. |
-| Soul Edge Ver. II (Asia, SO4/VER.C) | Boots + attract | KEYCUS C409 |
-| Dunk Mania (World, DM2/VER.C) | Boots + attract | KEYCUS C410; slow first boot (~2 min) |
-| Xevious 3D/G (World, XV32/VER.B) | Boots + attract | KEYCUS C430 |
-| Prime Goal EX (Japan, PG1/VER.A) | Boots + attract | KEYCUS C411 |
-| Dancing Eyes (World, DC2/VER.B) | Boots + attract | KEYCUS C431 |
-| Star Sweep (World, STP2/VER.A) | Boots + attract | KEYCUS C442 |
-| Kosodate Quiz My Angel 3 (Japan, KQT1/VER.A) | Boots + attract | KEYCUS C443 + rom8_64 32 MB banking |
+| Tekken 2 Ver.B (World, TES2/VER.B) | **Playable** | Verified on hardware: boots, renders, music and inputs all work. All eight revisions ship (seven as alternates), each boot-tested. |
+| Soul Edge Ver. II (SO4/VER.C) | Boots + attract | KEYCUS C409 |
+| Dunk Mania (DM2/VER.C) | Boots + attract | KEYCUS C410; slow first boot (~2 min) |
+| Xevious 3D/G (XV32/VER.B) | Boots + attract | KEYCUS C430 |
+| Prime Goal EX (PG1/VER.A) | Boots + attract | KEYCUS C411 |
+| Dancing Eyes (DC2/VER.B) | Boots + attract | KEYCUS C431 |
+| Star Sweep (STP1/VER.A) | Boots + attract | KEYCUS C442 |
+| Kosodate Quiz My Angel 3 (KQT1/VER.A) | Boots + attract | KEYCUS C443 + rom8_64 32 MB banking |
 
 The seven new titles pass their KEYCUS protection checks and render their
 attract sequences on hardware; gameplay depth-testing at the Tekken level is in
@@ -27,11 +51,36 @@ it — under investigation; its analog wheel plumbing is already in the core).
 Point Blank 2 (lightgun; no ROM verified) and Family Bowl (H8/3002 sub-board)
 are out of scope.
 
+## Contents
+
+```
+RELEASE-20260720/
+├── release/                       ← copy onto your MiSTer SD card
+│   └── _Arcade/
+│       ├── <one primary .mra per game (9 games)>
+│       ├── _alternatives/
+│       │   ├── _Tekken/           ← World VER.B, Asia VER.C, Japan VER.B
+│       │   ├── _Tekken 2/         ← the other 7 revisions (incl. gameplay-verified World TES2-VER.D)
+│       │   ├── _Soul Edge/        ← World/US/Japan VER.A, Ver. II US VER.C
+│       │   ├── _Dunk Mania/       ← Japan DM1-VER.C
+│       │   ├── _Xevious 3D-G/     ← World VER.A, Japan XV31-VER.A
+│       │   ├── _Dancing Eyes/     ← US DC3-VER.C, Japan DC1-VER.A
+│       │   └── _Star Sweep/       ← Japan STP1-VER.A
+│       └── cores/
+│           └── XNSYSTEM11_20260720.rbf   ← the FPGA core bitstream
+└── source/                        ← full corresponding FPGA source (build it yourself)
+```
+
 ## Installation
 
-1. Copy `XNSYSTEM11_20260713.rbf` to `_Arcade/cores/` on your MiSTer SD card.
-2. Copy the `.mra` files (e.g. `Tekken (World TE2 Ver.C).mra`) to `_Arcade/`.
-3. Place the ROM zips in `games/mame/` (the standard MiSTer arcade ROM location).
+1. Copy `release/_Arcade/` to the `_Arcade/` folder on your MiSTer SD card
+   (merging with what is already there).
+2. Place your own ROM zips in the MiSTer arcade ROM location
+   (`games/mame/` or `_Arcade/mame/`).
+3. Select a game from the arcade menu.
+
+The `.mra` files reference the core as `XNSYSTEM11`; MiSTer picks the
+newest-dated `XNSYSTEM11_*.rbf` in `_Arcade/cores/`.
 
 ROMs are **not** included with this project and are not linked from it — see [Legal](#legal). The MRA files reference MAME romsets by zip name:
 
@@ -41,18 +90,15 @@ ROMs are **not** included with this project and are not linked from it — see [
 | Tekken (World TE2 Ver.B).mra | `tekkenb.zip` + `tekken.zip` + `namcoc76.zip` |
 | Tekken (Asia TE4 Ver.C).mra | `tekkenac.zip` + `tekken.zip` + `namcoc76.zip` |
 | Tekken (Japan TE1 Ver.B).mra | `tekkenjb.zip` + `tekken.zip` + `namcoc76.zip` |
-| Tekken 2 Ver.B (World TES2-VER.D).mra | `tekken2.zip` + `namcoc76.zip` |
+| Tekken 2 Ver.B (World TES2-VER.B).mra | `tekken2b.zip` (or merged `tekken2.zip`) + `namcoc76.zip` |
 | Tekken 2 alternates (7 MRAs) | revision zip (`tekken2a/ua/ub/ud/jb/jc`) or merged `tekken2.zip`, + `namcoc76.zip` |
-| Soul Edge Ver. II (Asia SO4-VER.C).mra | `souledge.zip` + `namcoc76.zip` |
-| Dunk Mania (World DM2-VER.C).mra | `dunkmnia.zip` + `namcoc76.zip` |
-| Xevious 3D-G (World XV32-VER.B).mra | `xevi3dg.zip` + `namcoc76.zip` |
-| Prime Goal EX (Japan PG1-VER.A).mra | `primglex.zip` + `namcoc76.zip` |
-| Dancing Eyes (World DC2-VER.B).mra | `danceyes.zip` + `namcoc76.zip` |
-| Star Sweep (World STP2-VER.A).mra | `starswep.zip` + `namcoc76.zip` |
-| Kosodate Quiz My Angel 3 (Japan KQT1-VER.A).mra | `myangel3.zip` + `namcoc76.zip` |
-| Pocket Racer (Japan PKR1-VER.B).mra | `pocketrc.zip` + `namcoc76.zip` (not working yet) |
-| Point Blank 2 (World GNB2-VER.A).mra | `ptblank2a.zip` (or merged `ptblank2.zip`) + `namcoc76.zip` (untested, no lightgun) |
-| Family Bowl (Japan FB1-VER.A).mra | `fambowl.zip` + `namcoc76.zip` (not working) |
+| Soul Edge Ver. II (SO4-VER.C).mra | `souledge.zip` + `namcoc76.zip` |
+| Dunk Mania (DM2-VER.C).mra | `dunkmnia.zip` + `namcoc76.zip` |
+| Xevious 3D-G (XV32-VER.B).mra | `xevi3dg.zip` + `namcoc76.zip` |
+| Prime Goal EX (PG1-VER.A).mra | `primglex.zip` + `namcoc76.zip` |
+| Dancing Eyes (DC2-VER.B).mra | `danceyes.zip` + `namcoc76.zip` |
+| Star Sweep (STP1-VER.A).mra | `starswep.zip` + `namcoc76.zip` |
+| Kosodate Quiz My Angel 3 (KQT1-VER.A).mra | `myangel3.zip` + `namcoc76.zip` |
 
 `namcoc76.zip` (the Namco C76 sound-CPU BIOS) is required by **every** MRA — it is
 loaded into the core at runtime and is not embedded in the bitstream.
@@ -130,7 +176,7 @@ quartus_sh --flow compile SYSTEM11
 ```
 
 The output `output_files/SYSTEM11.rbf` should be renamed to
-`XNSYSTEM11_20260713.rbf` when placed in `_Arcade/cores/`.
+`XNSYSTEM11_20260720.rbf` when placed in `_Arcade/cores/`.
 
 ## Credits
 
@@ -141,13 +187,9 @@ The output `output_files/SYSTEM11.rbf` should be renamed to
 
 ## License
 
-The combined work is conveyed under the **GNU General Public License, version 3 or (at your option) any later version** — see [LICENSE](LICENSE), with the full texts in [COPYING.GPL2](COPYING.GPL2) and [COPYING.GPL3](COPYING.GPL3).
+This core is a combined/derived work licensed under the **GNU General Public License, version 3 or later (GPLv3-or-later)**.
 
-Most of the tree — the PSX_MiSTer base by Robert Peip that this project derives from, and this project's own System 11 hardware implementations — is *GPLv2 or any later version*. However, several files inherited from the MiSTer framework and the PSX_MiSTer base (`rtl/hps_ext.v`, `rtl/ddram.sv`, `rtl/sdram.sv`, `sys/hps_io.sv`, `sys/scandoubler.v`, `sys/ddr_svc.sv`, `sys/sd_card.sv`) are *GPLv3 or any later version*. GPLv2-or-later code may be used under v3, but GPLv3 code cannot be conveyed under v2 — so the **combination** must be distributed under GPLv3+. Each individual file remains available to you under the terms stated in its own header.
-
-`sys/ascal.vhd` (Avalon Scaler, TEMLIB) is distributed by its author under permissive, GPL-compatible terms. The Quartus-generated PLL wrappers carry Intel/Altera copyright notices and are redistributed as generated, as in every MiSTer core.
-
-Any redistribution or derived work of this core carries the same obligations: ship the corresponding source, keep the license notices intact, and convey under GPLv3+.
+It builds on [PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer) (Robert Peip) and the MiSTer framework. Several files in the build tree — the MiSTer `sys/` HPS-I/O, SD-card, scandoubler and DDR-service modules, and the SDRAM/DDR memory controllers — are licensed **GPL version 3 or later**. Combining GPLv2-or-later code with GPLv3-or-later code yields a work that can only be conveyed under GPLv3-or-later, so that is the license of this core as a whole. The full texts of both licenses are included (`COPYING.GPL2`, `COPYING.GPL3`); GPLv2-or-later files remain individually available under their own terms.
 
 ## Legal
 
@@ -161,4 +203,4 @@ Any redistribution or derived work of this core carries the same obligations: sh
 
 **User responsibility.** Users are solely responsible for ensuring that their use of this core — including the acquisition and use of any ROM images — complies with copyright law and all other applicable laws in their jurisdiction.
 
-**No warranty.** In accordance with the GPL-2.0 license: THIS PROGRAM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. IN NO EVENT WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THIS PROGRAM, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+**No warranty.** As set out in sections 15–16 of the GNU General Public License (v3) and the equivalent clauses of v2: THIS PROGRAM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. IN NO EVENT WILL ANY COPYRIGHT HOLDER OR CONTRIBUTOR BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THIS PROGRAM, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.

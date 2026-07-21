@@ -306,10 +306,14 @@ entity psx_mister is
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 mode
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type
-      -- EEPROM blank-image download (MRA ioctl index 9, all-FF) -> psx_top -> zn1_io
+      -- EEPROM/nvram (MRA index 9) load + save -> psx_top -> zn1_io
       ee_dl_wr        : in  std_logic := '0';
       ee_dl_addr      : in  std_logic_vector(9 downto 0) := (others => '0');
       ee_dl_data      : in  std_logic_vector(31 downto 0) := (others => '0');
+      ee_up_rd        : in  std_logic := '0';
+      ee_up_addr      : in  std_logic_vector(9 downto 0) := (others => '0');
+      ee_up_q         : out std_logic_vector(31 downto 0) := (others => '0');
+      ee_wr_pulse     : out std_logic := '0';
       -- System 11 C76 mailbox, MIPS side (16-bit word) -> top-level c76_sound
       mb_mips_addr    : out std_logic_vector(13 downto 0) := (others => '0');
       mb_mips_wdata   : out std_logic_vector(15 downto 0) := (others => '0');
@@ -749,6 +753,10 @@ begin
       ee_dl_wr        => ee_dl_wr,
       ee_dl_addr      => ee_dl_addr,
       ee_dl_data      => ee_dl_data,
+      ee_up_rd        => ee_up_rd,
+      ee_up_addr      => ee_up_addr,
+      ee_up_q         => ee_up_q,
+      ee_wr_pulse     => ee_wr_pulse,
       mb_mips_addr    => mb_mips_addr,
       mb_mips_wdata   => mb_mips_wdata,
       mb_mips_we      => mb_mips_we,
