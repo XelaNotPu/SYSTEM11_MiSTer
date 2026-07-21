@@ -271,6 +271,11 @@ begin
    sfr_q   <= in_adc0 when (unsigned(cpu_addr(7 downto 0)) = x"20")
               else in_adc1 when (unsigned(cpu_addr(7 downto 0)) = x"22")
               else in_adc2 when (unsigned(cpu_addr(7 downto 0)) = x"24")
+              -- Pocket Racer fix: AD0 high byte (10-bit A-D result bits 9:8) must be 0 for an 8-bit
+              -- reading. It was 0xFF, so a 16-bit AD0 read of the steering (AN0) saw 0xFF80 (pegged
+              -- past legal max) -> the C76 flagged a steering fault at shram 0xBD32 -> game hung
+              -- polling 0xBD32. AN1/AN2 high bytes stay 0xFF (Tekken kicks read the low byte only).
+              else x"00" when (unsigned(cpu_addr(7 downto 0)) = x"21")
               else x"FF" when (unsigned(cpu_addr(7 downto 0)) >= x"20" and unsigned(cpu_addr(7 downto 0)) <= x"2F")
               -- 2026-07-06 MUSIC-TEMPO FIX: timer COUNTER reads must return the LIVE down-count
               -- (the SPROG's sequencer POLLS TA2/TA3 for tempo -- their IC priorities stay 0, no

@@ -261,10 +261,14 @@ entity psx_top is
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 memory map + boot-from-program
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type (0=none, 1=C406)
-      -- EEPROM blank-image download (MRA ioctl index 9, all-FF) -> zn1_io EEPROM BRAM
+      -- EEPROM/nvram (MRA index 9) load + save -> zn1_io EEPROM BRAM
       ee_dl_wr        : in  std_logic := '0';
       ee_dl_addr      : in  std_logic_vector(9 downto 0) := (others => '0');
       ee_dl_data      : in  std_logic_vector(31 downto 0) := (others => '0');
+      ee_up_rd        : in  std_logic := '0';
+      ee_up_addr      : in  std_logic_vector(9 downto 0) := (others => '0');
+      ee_up_q         : out std_logic_vector(31 downto 0) := (others => '0');
+      ee_wr_pulse     : out std_logic := '0';
       -- System 11 C76 shared-RAM mailbox, MIPS side (16-bit word) -> c76_sound at top level
       mb_mips_addr    : out std_logic_vector(13 downto 0) := (others => '0');
       mb_mips_wdata   : out std_logic_vector(15 downto 0) := (others => '0');
@@ -2500,7 +2504,11 @@ begin
       dbg_bankwr     => zn_dbg_bankwr,
       ee_dl_wr       => ee_dl_wr,
       ee_dl_addr     => ee_dl_addr,
-      ee_dl_data     => ee_dl_data
+      ee_dl_data     => ee_dl_data,
+      ee_up_rd       => ee_up_rd,
+      ee_up_addr     => ee_up_addr,
+      ee_up_q        => ee_up_q,
+      ee_wr_pulse    => ee_wr_pulse
    );
 
    -- 2026-07-05 MAILBOX-READ forensics: latch the last MIPS mailbox READ (addr halfwords + the data

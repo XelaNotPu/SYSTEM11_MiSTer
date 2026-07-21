@@ -81,7 +81,15 @@ architecture arch of m37702 is
    signal mask16   : unsigned(15 downto 0) := (others => '0');  -- LDM/SEB/CLB immediate
    signal w8       : std_logic := '0';     -- '1' = 8-bit operand
 
-   signal irq0_l, irq1_l, irq2_l : std_logic := '0';
+   signal irq0_l, irq1_l, irq2_l : std_logic := '0';  -- 1-cycle-delayed external line samples (edge detect)
+   -- HOLD_LINE semantics for the EXTERNAL INT0/INT1/INT2 pins: MAME asserts these via
+   -- set_input_line(HOLD_LINE) from 60 Hz timers and the line stays asserted until the CPU
+   -- ACKNOWLEDGES (takes) the IRQ. Our substrate drives irqN as a short (~256 ce) pulse, so a
+   -- level-following accept (irqN_l) DROPS the request whenever the pulse lands while the C76 is
+   -- masked (fl_i=1, inside another ISR) -> the INT2-driven mailbox command handler (0xD3D3, which
+   -- reads the MIPS cmd @0xBD34 and acks @0xBD32) never runs and Pocket Racer hangs. Latch the
+   -- rising edge into a pending flag and clear it only when the IRQ is taken (== HOLD_LINE).
+   signal irq0_pend, irq1_pend, irq2_pend : std_logic := '0';
    signal irq_tb0_pend : std_logic := '0';   -- Timer B0 interrupt pending (set on pulse, cleared when taken)
    signal irq_tb1_pend : std_logic := '0';   -- Timer B1 interrupt pending (the C76's 357x/run service tick @0xC31F)
    signal irq_ad_pend  : std_logic := '0';   -- A-D conversion-complete pending; vector 0xFFD6 -> ISR 0xC30D
@@ -251,12 +259,18 @@ begin
             regDT<=(others=>'0'); regDPR<=(others=>'0');
             pfx<=PFX_NONE; use_b<='0';
             irq0_l<='0'; irq1_l<='0'; irq2_l<='0';
+            irq0_pend<='0'; irq1_pend<='0'; irq2_pend<='0';
             irq_tb0_pend<='0'; irq_tb1_pend<='0'; irq_ad_pend<='0';
             irq_ta2_pend<='0'; irq_ta3_pend<='0';
 
          elsif ce = '1' then
             dbg_valid <= '0';
             irq0_l<=irq0; irq1_l<=irq1; irq2_l<=irq2;
+            -- HOLD_LINE: latch the RISING edge of each external INT pulse into a pending flag
+            -- (one accept per 60 Hz tick; held until taken -> never dropped by IPL masking).
+            if irq0='1' and irq0_l='0' then irq0_pend<='1'; end if;
+            if irq1='1' and irq1_l='0' then irq1_pend<='1'; end if;
+            if irq2='1' and irq2_l='0' then irq2_pend<='1'; end if;
             if irq_tb0='1' then irq_tb0_pend<='1'; end if;  -- latch the Timer B0 tick pulse
             if irq_ta2='1' then irq_ta2_pend<='1'; end if;  -- latch the Timer A2 tick pulse
             if irq_ta3='1' then irq_ta3_pend<='1'; end if;  -- latch the Timer A3 tick pulse
@@ -294,9 +308,9 @@ begin
                      if irq_tb0_pend='1' and prio_tb0  > best_prio then best_prio:=prio_tb0;  int_sel:=2; int_take:=true; end if;
                      if irq_ta2_pend='1' and prio_ta2  > best_prio then best_prio:=prio_ta2;  int_sel:=7; int_take:=true; end if;
                      if irq_ta3_pend='1' and prio_ta3  > best_prio then best_prio:=prio_ta3;  int_sel:=8; int_take:=true; end if;
-                     if irq2_l='1'       and prio_int2 > best_prio then best_prio:=prio_int2; int_sel:=3; int_take:=true; end if;
-                     if irq1_l='1'       and prio_int1 > best_prio then best_prio:=prio_int1; int_sel:=4; int_take:=true; end if;
-                     if irq0_l='1'       and prio_int0 > best_prio then best_prio:=prio_int0; int_sel:=5; int_take:=true; end if;
+                     if irq2_pend='1'    and prio_int2 > best_prio then best_prio:=prio_int2; int_sel:=3; int_take:=true; end if;
+                     if irq1_pend='1'    and prio_int1 > best_prio then best_prio:=prio_int1; int_sel:=4; int_take:=true; end if;
+                     if irq0_pend='1'    and prio_int0 > best_prio then best_prio:=prio_int0; int_sel:=5; int_take:=true; end if;
                   end if;
                   if int_take then
                      -- synthesis translate_off
@@ -311,9 +325,9 @@ begin
                         when 8      => int_vec<=x"FFE8"; irq_ta3_pend<='0';  -- Timer A3
                         when 6      => int_vec<=x"FFD6"; irq_ad_pend <='0';
                         when 2      => int_vec<=x"FFE4"; irq_tb0_pend<='0';
-                        when 3      => int_vec<=x"FFF0";
-                        when 4      => int_vec<=x"FFF2";
-                        when others => int_vec<=x"FFF4";
+                        when 3      => int_vec<=x"FFF0"; irq2_pend<='0';
+                        when 4      => int_vec<=x"FFF2"; irq1_pend<='0';
+                        when others => int_vec<=x"FFF4"; irq0_pend<='0';
                      end case;
                      int_pushpc<=regPC; int_step<=(others=>'0'); state<=ST_INT_PUSH;
                   else
