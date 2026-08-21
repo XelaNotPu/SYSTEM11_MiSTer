@@ -1895,6 +1895,7 @@ psx
    .zn_cat702_key_b(zn_cat702_key_b_r),
    .zn_platform    (zn_platform_r[3:0]),
    .zn_system11    (zn_platform_r[4]),   // MRA platform byte bit4 = Namco System 11 mode
+   .s11_coh100     (zn_platform_r[5]),   // MRA platform byte bit5 = COH-100 / CXD8538Q
    .keycus_id      (zn_keycus_id),       // MRA index-1 byte[1]: 0=none, 1=C406 (Tekken 2)
    .zn_gun1_x      (gun_x),              // System 11 GUN I/F (Point Blank 2 / Gunbarl, C443)
    .zn_gun1_y      (gun_y),

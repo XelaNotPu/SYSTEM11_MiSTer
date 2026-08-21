@@ -305,6 +305,7 @@ entity psx_mister is
       zn_cat702_key_b : in  std_logic_vector(63 downto 0);
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 mode
+      s11_coh100      : in  std_logic := '0';  -- COH-100 / CXD8538Q GPU type 1
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type
       -- System 11 GUN I/F (Point Blank 2 / Gunbarl, C443): absolute gun counters, pre-clamped
       zn_gun1_x       : in  std_logic_vector(15 downto 0) := (others => '0');
@@ -754,6 +755,7 @@ begin
       zn_cat702_key_b => zn_cat702_key_b,
       zn_platform     => zn_platform,
       zn_system11     => zn_system11,
+      s11_coh100      => s11_coh100,
       keycus_id       => keycus_id,
       zn_gun1_x       => zn_gun1_x,
       zn_gun1_y       => zn_gun1_y,

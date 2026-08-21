@@ -19,7 +19,7 @@
 		</interleave>
 	</rom>
 	<!-- ioctl_index 1: byte0=platform (bit4 = Namco System 11), byte1=KEYCUS type (01=C406) -->
-	<rom index="1"><part>14 01</part></rom>
+	<rom index="1"><part>34 01</part></rom>
 	<!-- ioctl_index 3: banked data ROM (16MB region) -> SDRAM 0x800000, 8x1MB CPU windows -->
 	<rom index="3" zip="tekken2a.zip|tekken2.zip" md5="none">
 		<interleave output="16">
