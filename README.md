@@ -18,9 +18,7 @@ The core is derived from the excellent [PSX_MiSTer](https://github.com/MiSTer-de
   to get the old freeze-on-menu behavior back. The mappable Pause button is
   unchanged.
 
-The core file is `Arcade-SYSTEM11_20260911b.rbf` (the "b" keeps it after — and
-distinct from — the same-day supporter build in MiSTer's version-name sorting).
-Everything below from 20260901 carries over unchanged.
+The core file is `Arcade-SYSTEM11_20260911.rbf` .
 
 ## New in 20260901
 
@@ -44,8 +42,8 @@ Also in this release:
   selects the correct GPU type for them via their MRAs, fixing the corrupt
   graphics those versions showed. The primary TES2-VER.D (and TES3-VER.D) were
   always correct.
-- **Accurate cabinet inputs**: both physical DIP switches are exposed with MAME's
-  exact names — "DIP1 (Test)" enters each game's service menu, "DIP2 (Freeze)"
+- **Accurate cabinet inputs**: both physical DIP switches are exposed with exact
+  names — "DIP1 (Test)" enters each game's service menu, "DIP2 (Freeze)"
   freezes — and the cabinet Service button is now mappable (OSD → Define buttons),
   so service menus are fully operable.
 - **Game-appropriate button labels**: every MRA names its buttons for its game
@@ -83,7 +81,7 @@ Standard System 11 controls (up to 4 buttons in the P1 register, plus coin/start
 
 ## Install
 
-Copy the `_Arcade/` folder onto your SD card's root folder: this places the `.mra` files (and `_alternatives/`) directly in `_Arcade/`, and `cores/Arcade-SYSTEM11_20260911b.rbf` in `_Arcade/cores/`. **Remove stale `XNSYSTEM11_*` cores and MRAs from earlier builds** — they reference the retired name. **Provide your own romsets — nothing copyrighted is included.**
+Copy the `_Arcade/` folder onto your SD card's root folder: this places the `.mra` files (and `_alternatives/`) directly in `_Arcade/`, and `cores/Arcade-SYSTEM11_20260911.rbf` in `_Arcade/cores/`. **Remove stale `XNSYSTEM11_*` cores and MRAs from earlier builds** — they reference the retired name. **Provide your own romsets — nothing copyrighted is included.**
 
 MRAs reference romsets by name only.
 
