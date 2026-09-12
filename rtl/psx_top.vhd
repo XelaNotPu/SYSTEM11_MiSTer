@@ -261,6 +261,7 @@ entity psx_top is
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 memory map + boot-from-program
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type (0=none, 1=C406)
+      zn_gputype1_force : in std_logic := '0'; -- MRA platform byte bit5 = coh100 board (CXD8538Q, GPU type 1)
       -- System 11 GUN I/F (Point Blank 2 / Gunbarl, C443): absolute gun counters, pre-clamped
       zn_gun1_x       : in  std_logic_vector(15 downto 0) := (others => '0');
       zn_gun1_y       : in  std_logic_vector(15 downto 0) := (others => '0');
@@ -2736,9 +2737,12 @@ begin
    -- does irqVecCount climb (per-frame IRQs recurring => running) or stay 1 (stuck in first handler)?
    -- 2026-06-27: cycle the spin-loop's polled addresses t0 / a3 (~0.5s each via dbg_cyc(24)) so one
    -- build reveals both. Identify by value (t0/a3 are 0x8003xxxx RAM or 0x1FA0xxxx I/O addresses).
-   -- gputype1 = coh100 board = CXD8538Q. Only Tekken 1 (the keycus-less game) uses it;
-   -- all other System 11 boards are coh110 with the retail CXD8561Q (type 2).
-   s11_gputype1 <= '1' when (zn_system11 = '1' and keycus_id = x"00") else '0';
+   -- gputype1 = coh100 board = CXD8538Q. Tekken 1 (the keycus-less game) uses it,
+   -- and so do the older Tekken 2 revisions (MAME's tekken2o sets: TES1/TES2/TES3
+   -- VER.A/B/C) — those carry KEYCUS C406 so the keycus byte alone cannot identify
+   -- the board; their MRAs set platform-byte bit5 (zn_gputype1_force) instead.
+   -- Every other System 11 board is coh110 with the retail CXD8561Q (type 2).
+   s11_gputype1 <= '1' when (zn_system11 = '1' and (keycus_id = x"00" or zn_gputype1_force = '1')) else '0';
 
    zn_debug_val <= std_logic_vector(cpu_dbg_instr_word);  -- live PC (pcOld1)
    zn_dbg_a0    <= cpu_dbg_fault_s1s2;  -- mode 1: [31:16]=$s1[15:0] [15:0]=$s2[15:0] at the fault (branch operands)

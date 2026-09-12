@@ -171,12 +171,8 @@ module emu
 	// 1 - D-/TX
 	// 2..6 - USR2..USR6
 	// Set USER_OUT to 1 to read from USER_IN.
-	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: OSD button, per-pin push-pull mask, 8-bit user port
-	output        USER_OSD,
-	output  [7:0] USER_PP,
-	input   [7:0] USER_IN,
-	output  [7:0] USER_OUT,
-	// [MiSTer-DB9 END]
+	input   [6:0] USER_IN,
+	output  [6:0] USER_OUT,
 
 	input         OSD_STATUS
 );
@@ -377,47 +373,43 @@ parameter CONF_STR = {
 	// "P1O[24],Rotate,Off,On;",
 	// "P1O[22],Dithering,On,Off;",
 	// "P1O[8:7],Stereo Mix,None,25%,50%,100%;",
+	// The two physical DIP switches (MAME namcos11 "DIP SW2"), named exactly as
+	// MAME names them. DIP1 (Test) enters each game's service menu.
 	"P2,DIP Switches;",
-	"P2O[96],DIP1 Test,Off,On;",
-	"P2O[97],DIP2 Freeze,Off,On;",
+	"P2O[96],DIP1 (Test),Off,On;",
+	"P2O[97],DIP2 (Freeze),Off,On;",
 	// Light-gun page (Point Blank 2 / Gunbarl, KEYCUS C443). Sensitivity is exposed rather than
 	// guessed: the gun counters span only 688 x 239 units, so a high-DPI mouse saturates them at
 	// 1:1. Crosshair defaults OFF — the real cabinet draws none (you aim a physical gun), and
 	// keycus 0x09 is shared with My Angel 3, which is not a gun game.
-	"P4,Light Gun;",
-	"P4O[100],Crosshair,Off,On;",
-	"P4O[99:98],Gun Sensitivity,1/4,1/8,1/2,1/1;",
-	// CRT Adjust (analog CRT geometry, core-side crt_adjust.sv). Default Off ->
-	// HDMI/analog untouched. On: the analog picture stretches/shifts (HDMI follows).
-	// Amounts are hidden until On via status_menumask bit1 (H1).
-	"P5,CRT Adjust;",
-	"P5O[112],CRT Adjust (analog),Off,On;",
-	"H1P5O[117:113],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"H1P5O[122:118],CRT H-Position,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"H1P5O[127:123],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P3,Debug;",
-	"P3O[28],FPS Counter,Off,On;",
-	"P3O[93],Boot Debug Overlay,Off,On;",
-	"P3O[94],Test Mode,Off,On;",
-	"P3O[95],Service Mode,Off,On;",
-	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support
-	// Keep the fleet-standard 4-way encoding (Off,Saturn,DB9MD,DB15) so Main_MiSTer's
-	// numbering matches every other DB9 core; Saturn stays inert here (no key gate).
+	// H0: the whole page is hidden unless the loaded MRA declares a gun game.
+	"H0P4,Light Gun;",
+	"H0P4O[100],Crosshair,Off,On;",
+	"H0P4O[99:98],Gun Sensitivity,1/4,1/8,1/2,1/1;",
+	// GITHUB output template (2026-09-01): the Debug OSD page (FPS counter, boot
+	// debug overlay, test/service toggles) is excluded from this edition.
 	"-;",
-	"O[102:101],UserIO Joystick,Off,Saturn,DB9MD,DB15;",
-	"O[103],UserIO Players,1 Player,2 Players;",
-	// [MiSTer-DB9 END]
+	// Policy rev 4 (2026-09-02): opening the OSD no longer pauses the core by
+	// default; this option opts back in. status[64] polarity is chosen so the
+	// power-on/unset value (0) is Off — the pause gate below tests status[64]
+	// directly (it was ~status[64] when pausing was the unconditional default).
+	"O[64],Pause when OSD is open,Off,On;",
 	"-;",
 	"R0,Reset;",
-	"J1,Button1,Button2,Button3,Button4,Button5,Button6,Start,Coin,Pause;",
-	"jn,A,B,X,Y,L,R,Start,Select,L3;",
+	// Service (joy[13]) is the cabinet SERVICE1 button (service credit / service-menu
+	// navigation), a game input like Coin — per-game labels come from each MRA's
+	// <buttons> tag.
+	"J1,Button1,Button2,Button3,Button4,Button5,Button6,Start,Coin,Pause,Service;",
+	"jn,A,B,X,Y,L,R,Start,Select,L3,R3;",
 	"V,v",`BUILD_DATE
 };
 
-reg dbg_enabled = 0;
 wire  [1:0] buttons;
 wire [127:0] status;
-wire [15:0] status_menumask = {14'd0, ~status[112], 1'b0};  // H1 = hide CRT Adjust amounts until it is On
+// Bit 0 hides the Light Gun OSD page (H0 prefix) for every game whose MRA does
+// not declare itself a gun game — light-gun support must not be offered to
+// games that don't natively have it.
+wire [15:0] status_menumask = {15'd0, ~zn_gun_game};
 wire        forced_scandoubler;
 reg  [31:0] sd_lba0 = 0;
 reg  [31:0] sd_lba1;
@@ -488,68 +480,6 @@ wire bk_pending = 1'b0;
 wire saving_memcard = 1'b0;
 wire DIRECT_VIDEO;
 
-// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joydb wrapper
-// [MiSTer-DB9 RESERVED status bits: 102:101 103]  (fleet default 127:126/125 is
-// taken by CRT Adjust in this core, so the option is relocated like Asteroids' 65:64/63)
-wire         CLK_JOY = CLK_50M;                 // joydb needs a fixed 40-50 MHz clock
-wire   [1:0] joy_type_raw = status[102:101];    // 0=Off, 1=Saturn, 2=DB9MD, 3=DB15
-wire         joy_2p       = status[103];
-// SNAC preemption: whenever the PSX-pad SNAC path owns the USER port, joydb is
-// forced Off -> USER_OUT_DRIVE = 8'hFF and USER_PP_DRIVE = 8'h00 (pins released).
-wire         snac_active  = snacPort1 | snacPort2;
-wire         mt32_primary_active = 1'b0;        // this core has no MT32-pi on the user port
-wire   [1:0] joy_type     = snac_active ? 2'd0 : joy_type_raw;
-
-// The Saturn key gate is not ported (its public secret include is a zero stub),
-// so Saturn mode is present in the OSD for fleet numbering but stays inert.
-wire         saturn_unlocked = 1'b0;
-
-wire   [7:0] USER_OUT_DRIVE;
-wire   [7:0] USER_PP_DRIVE;
-wire  [15:0] joydb_1, joydb_2;
-wire         joydb_1ena, joydb_2ena;
-wire  [15:0] joydb_1_mapped, joydb_2_mapped;
-wire  [15:0] joy_raw_payload;
-wire  [19:0] joy0_USB, joy1_USB;
-
-joydb joydb
-(
-   .clk                 ( CLK_JOY             ),
-   .clk_sys             ( clk_1x              ),
-   .USER_IN             ( USER_IN             ),
-   .OSD_STATUS          ( OSD_STATUS          ),
-   .snac_active         ( snac_active         ),
-   .mt32_primary_active ( mt32_primary_active ),
-   .joy_type            ( joy_type            ),
-   .joy_2p              ( joy_2p              ),
-   .saturn_unlocked     ( saturn_unlocked     ),
-   .USER_OUT_DRIVE      ( USER_OUT_DRIVE      ),
-   .USER_PP_DRIVE       ( USER_PP_DRIVE      ),
-   .USER_OSD            ( USER_OSD            ),
-   .joydb_1             ( joydb_1             ),
-   .joydb_2             ( joydb_2             ),
-   .joydb_1ena          ( joydb_1ena          ),
-   .joydb_2ena          ( joydb_2ena          ),
-   .remap_cmd           ( 1'b0                ),   // UIO 0xFD remap stream not ported -> identity matrix
-   .remap_byte_cnt      ( 6'd0                ),
-   .remap_din           ( 16'd0               ),
-   .joydb_1_mapped      ( joydb_1_mapped      ),
-   .joydb_2_mapped      ( joydb_2_mapped      ),
-   .joy_raw             ( joy_raw_payload     )
-);
-
-assign USER_PP = USER_PP_DRIVE;
-
-// Gameplay merge. joydb_*_mapped is already in MiSTer-standard bit order and it
-// lines up 1:1 with this core's J1 map:
-//   [3:0]=R,L,D,U  [4]=A->Button1  [5]=B->Button2  [6]=C->Button3
-//   [7]=X->Button4 [8]=Y->Button5  [9]=Z->Button6  [10]=Start [11]=Mode->Coin
-// Zeroed while the OSD is open so the pad drives the menu only (via joy_raw).
-assign joy_unmod = joydb_1ena ? (OSD_STATUS ? 20'd0 : {4'd0, joydb_1_mapped}) : joy0_USB;
-assign joy2      = joydb_2ena ? (OSD_STATUS ? 20'd0 : {4'd0, joydb_2_mapped})
-                              : (joydb_1ena ? joy0_USB : joy1_USB);
-// [MiSTer-DB9 END]
-
 hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
 (
 	.clk_sys(clk_1x),
@@ -559,11 +489,8 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
 	.buttons(buttons),
 	.forced_scandoubler(forced_scandoubler),
 
-	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: USB pads feed the joydb merge above
-	.joystick_0(joy0_USB),
-	.joystick_1(joy1_USB),
-	.joy_raw(OSD_STATUS ? joy_raw_payload : 16'b0),
-	// [MiSTer-DB9 END]
+	.joystick_0(joy_unmod),
+	.joystick_1(joy2),
 	.joystick_2(joy3),
 	.joystick_3(joy4),
 	.ps2_key(ps2_key),
@@ -739,6 +666,7 @@ end
 // Dynamic platform config and CAT702 key loading (from MRA rom index 1/4/5)
 reg [7:0]  zn_platform_r  = 8'h00;              // ioctl_index 1: platform id (0=Visco, 1=Raizing, 2=Taito, 3=Atlus, 4=Tecmo)
 reg [7:0]  zn_keycus_id   = 8'h00;              // ioctl_index 1 byte[1]: KEYCUS type (0=none/Tekken1, 1=C406/Tekken2)
+reg        zn_gun_game    = 1'b0;               // ioctl_index 1 byte[2] bit0: this MRA is a light-gun game (Point Blank 2 / Gunbarl)
 // CAT702 security keys — NO baked-in key data (blank default, all zero).
 // System 11 (Tekken/Soul Edge/etc.) does NOT use CAT702 at all — its protection
 // is the KEYCUS C-chip (C406/C409), handled via zn_keycus_id. CAT702 is a ZN-1
@@ -752,8 +680,16 @@ reg [63:0] zn_cat702_key_b_r = 64'h0;
 always @(posedge clk_1x) begin
 	if (ioctl_wr) begin
 		if (ioctl_index[5:0] == 1) begin
-			zn_platform_r <= ioctl_dout[7:0];
-			zn_keycus_id  <= ioctl_dout[15:8];   // 0 for old single-byte MRAs
+			// Word 0: byte0 = platform id, byte1 = KEYCUS type. Word 1 (optional,
+			// 4-byte MRAs): byte2 bit0 = light-gun game. The gun flag exists because
+			// KEYCUS C443 (0x09) is shared between Point Blank 2/Gunbarl (gun games)
+			// and My Angel 3 (a quiz game) — the keycus alone cannot gate gun support.
+			if (ioctl_addr[2:1] == 2'd0) begin
+				zn_platform_r <= ioctl_dout[7:0];
+				zn_keycus_id  <= ioctl_dout[15:8];   // 0 for old single-byte MRAs
+			end else if (ioctl_addr[2:1] == 2'd1) begin
+				zn_gun_game   <= ioctl_dout[0];
+			end
 		end else if (ioctl_index[5:0] == 4) begin
 			case (ioctl_addr[2:1])
 				2'd0: zn_cat702_key_a[15:0]  <= ioctl_dout;
@@ -843,67 +779,9 @@ always @(posedge clk_1x) begin
    end
 end
 
-// DIAGNOSTIC (build 8): capture the 32-bit word written to SDRAM at the PROGRAM offset
-// 0x20000 (SDRAM byte 0x420000 = CPU 0x1FC20000) during download. The boot loads its
-// next-stage jump target from CPU 0x1FC20000: MAME=0x1FC20038 (correct), my core's CPU
-// reads 0x1FC20298 (garbage -> crash). This latch shows what was WRITTEN to SDRAM:
-//   == 0x1FC20038 -> SDRAM write is correct -> the bug is in the READ/memctrl path
-//   == 0x1FC20298 -> the download corrupts it -> a write/assembly/ioctl-stream bug
-reg [31:0] dbg_sdram_wr_word = 32'h00000000;
-always @(posedge clk_1x) begin
-   // At the ramdownload_wr cycle, ramdownload_wrdata holds the fully-assembled 32-bit word
-   // (both 16-bit halves set in prior cycles); latch it directly.
-   if (ramdownload_wr && ramdownload_wraddr == 27'h0420000)
-      dbg_sdram_wr_word <= ramdownload_wrdata;
-end
-
-// DIAGNOSTIC (build 9): capture what the SDRAM READ (ch1) returns at 0x420000 — i.e. the
-// lw of CPU 0x1FC20000. build-8 confirmed the ch3 WRITE there = 0x1FC20038 (correct).
-//   == 0x1FC20038 -> SDRAM read correct -> corruption is downstream (memorymux->CPU delivery)
-//   == 0x1FC20298 -> ch1 read sees wrong data -> ch1/ch3 address-map mismatch or read/content bug
-reg [31:0] dbg_sdram_rd_word = 32'h00000000;
-reg        dbg_rd_seen       = 1'b0;
-always @(posedge clk_1x) begin
-   if (~dbg_rd_seen && sdram_addr == 27'h0420000 && sdram_readack) begin
-      dbg_sdram_rd_word <= sdr_sdram_dout32;
-      dbg_rd_seen       <= 1'b1;
-   end
-end
-
-// DECISIVE 2026-06-24: capture the WRITE value to SDRAM 0x10170 (the game-RAM word that reads back
-// 0x48000000). ch2 = CPU writes (sdram_addr/sdr_sdram_din, req=sdram_req & ~sdram_rnw). Sticky FIRST.
-//   wr = 0x48000000  -> loader/copy/banked-ROM-source produced wrong data (read path is innocent)
-//   wr = 0xA420FB00  -> write correct -> read-address/content-after-write bug
-//   wr_seen = 0      -> 0x10170 never CPU-written -> loaded by DMA (capture that path instead)
-// STICKY-LAST: capture the MOST RECENT write to SDRAM 0x10170 (the final game-code value after the
-// boot memclear). dbg_wr_first = the FIRST write (the memclear=0). dbg_wr10170 = the LAST write.
-reg [31:0] dbg_wr10170   = 32'h00000000;   // last write value
-reg [31:0] dbg_wr_first  = 32'hDEADBEEF;   // first write value (sentinel until first write)
-reg        dbg_wr_seen   = 1'b0;
-always @(posedge clk_1x) begin
-   if (sdram_addr == 27'h0010170 && sdram_req && ~sdram_rnw) begin
-      dbg_wr10170 <= sdr_sdram_din;                 // always overwrite -> holds the LAST write
-      if (~dbg_wr_seen) dbg_wr_first <= sdr_sdram_din;
-      dbg_wr_seen <= 1'b1;
-   end
-end
-
-// 2026-06-28: capture CPU writes to OT-tail word 0x25780C (and 2MB-mirror 0x05780C).
-// Upper byte = write count (saturates), low 24 = last value written. MAME-correct = 0x235A60.
-reg [31:0] dbg_wr25780C = 32'h00000000;
-reg [31:0] dbg_wr05780C = 32'h00000000;
-reg [7:0]  dbg_wr780C_cnt = 8'h00;
-reg [7:0]  dbg_wr780C_mcnt = 8'h00;
-always @(posedge clk_1x) begin
-   if (sdram_addr == 27'h025780C && sdram_req && ~sdram_rnw) begin
-      dbg_wr25780C <= {dbg_wr780C_cnt, sdr_sdram_din[23:0]};
-      if (dbg_wr780C_cnt != 8'hFF) dbg_wr780C_cnt <= dbg_wr780C_cnt + 1'b1;
-   end
-   if (sdram_addr == 27'h005780C && sdram_req && ~sdram_rnw) begin
-      dbg_wr05780C <= {dbg_wr780C_mcnt, sdr_sdram_din[23:0]};
-      if (dbg_wr780C_mcnt != 8'hFF) dbg_wr780C_mcnt <= dbg_wr780C_mcnt + 1'b1;
-   end
-end
+// GITHUB output template (2026-09-02): the SDRAM write/read diagnostic capture
+// latches that lived here (download-word, ch1-readback, OT-tail write monitors)
+// were debug instrumentation and are excluded from this edition.
 
 ///////////////////////////  SAVESTATE  /////////////////////////////////
 
@@ -1026,7 +904,6 @@ always @(posedge clk_1x) begin
       psx_info     <= ss_info;
    end
 
-   if (joy[14] && joy[15] && joy[8]) dbg_enabled <= 1;  // L3+R3+Select
 
    // DS toggle (unused in arcade but kept for joypad struct compatibility)
    joy19_1 <= {joy4[19] ,joy3[19] ,joy2[19] ,joy[19] };
@@ -1061,8 +938,10 @@ always @(posedge clk_1x) begin
 
    paused <= 0;
 
-   // pause from OSD open
-   if (~status[64] & OSD_STATUS & (unpause == 0)) begin
+   // pause from OSD open — only when the "Pause when OSD is open" option is On
+   // (status[64]; default Off per policy rev 4, so the game keeps running under
+   // an open OSD unless the user opts in)
+   if (status[64] & OSD_STATUS & (unpause == 0)) begin
       paused <= 1;
    end
 
@@ -1362,7 +1241,7 @@ c76_sound c76snd
    // games MAME's PORT_MODIFY leaves only 0x10 (BUTTON1 = TRIGGER) and 0x80 (START1) live, so the
    // low-nibble remap below is a My Angel 3 mapping that is harmless on the gun games. Bit 4 is
    // the trigger: OR in the mouse left button so a mouse can fire as well as a pad Button1.
-   .in_player1(~{joy[10],  joy[6],  joy[5],  (joy[4] | ((zn_keycus_id == 8'h09) & gun_trigger)),
+   .in_player1(~{joy[10],  joy[6],  joy[5],  (joy[4] | (zn_gun_game & gun_trigger)),
                  (zn_keycus_id == 8'h09) ? {joy[4],  joy[5],  joy[6],  joy[7]}  : {joy[3],  joy[2],  joy[1],  joy[0]}}),
    .in_player2(~{joy2[10], joy2[6], joy2[5], joy2[4],
                  (zn_keycus_id == 8'h09) ? {joy2[4], joy2[5], joy2[6], joy2[7]} : {joy2[3], joy2[2], joy2[1], joy2[0]}}),
@@ -1380,7 +1259,10 @@ c76_sound c76snd
    // COIN3/COIN4 were hardcoded unpressed, so players 3 and 4 could not credit up even once their
    // controls existed -- on a 4-player cabinet like Dunk Mania that alone makes them unusable.
    // Driven only on the base layout: the tekken/myangel3 port sets mark these bits IPT_UNUSED.
-   .in_switch (~{status[95], status[94], joy[11], joy2[11],
+   // SERVICE1 (b7) is the cabinet service button, mapped as a normal game input
+   // (J1 "Service", joy[13], either player). The TEST toggle (b6) sits unpressed —
+   // the P2 "DIP1 (Test)" switch below is the service-menu entry, as on hardware.
+   .in_switch (~{(joy[13] | joy2[13]), 1'b0, joy[11], joy2[11],
                  zn_generic_adc ? joy3[11] : 1'b0, zn_generic_adc ? joy4[11] : 1'b0,
                  status[96], status[97]}),
    // Pocket Racer (KEYCUS C432): AN0 = steering (PADDLE centre 0x80, legal 0x38-0xC8,
@@ -1497,8 +1379,7 @@ end
 wire [31:0] c76_mbstat = {c76_ram80, c76_ram83, mb_wr_cnt};                                    // [31:24]RAM80 [23:16]RAM83 [15:0]MIPS-write-count
 wire [31:0] c76_mblast = {c76_resp, c76_ever_c098, ram83_toggled, c76_halted, mb_last_addr[13:0], mb_last_wd[13:0]}; // [31]resp [30]c098 [29]RAM83-toggled [28]halted [27:14]lastMBwordAddr [13:0]lastMBdata
 // COMBINED: [31]c76_halted [30]c76_resp [29]ran-TB1-svc [28]c76 ever derailed (brk_site!=0)
-// [27:21]=0 [20:0]=MIPS maxRAMPC offset (from cpu.vhd zn_debug_val[20:0]).
-wire [31:0] dbg_combo = {c76_halted, c76_resp, c76_ever_c098, (c76_brk_site!=24'd0), 7'b0, zn_debug_val[20:0]};
+// (dbg_combo probe word excluded — GITHUB output template, 2026-09-01)
 
 // 2026-07-06 SILENCE TRIAGE probe (mode 5): {aud_nz[11:0], c352_wr[7:0], wave_rq[5:0], wave_dn[5:0]}
 //   aud_nz  = samples where C352 L/R output != 0 (rolling)   -> audio produced?
@@ -1593,7 +1474,10 @@ always @(posedge clk_1x) begin
    endcase
 end
 
-wire [31:0] jtag_addr;   // JTAG/ISSP source (driven by altsource_probe below); also drives VRAM-readback coord
+// GITHUB output template (2026-09-01): the JTAG/ISSP debug probe is excluded
+// from this edition, so its address source is a constant; every diagnostic
+// cone it selected (VRAM readback, C76 ring/dpram windows) folds away.
+wire [31:0] jtag_addr = 32'd0;
 
 psx_mister
 psx
@@ -1628,7 +1512,7 @@ psx
    .interlaced480pHack(status[89]),
    .showGunCrosshairs(status[9]),
    .enableNeGconRumble(status[91]),
-   .fpscountOn(status[28]),
+   .fpscountOn(1'b0),  // GITHUB template: FPS-counter debug overlay excluded
    .cdslowOn(status[59]),
    .testSeek(status[70]),
    .pauseOnCDSlow(~status[72]),
@@ -1886,8 +1770,8 @@ psx
    .zn_p2_btn     (joy2[9:4]),
    .zn_p2_start   (joy2[10]),
    .zn_p2_coin    (joy2[11]),
-   .zn_service    (status[95]),
-   .zn_test_mode  (status[94]),
+   .zn_service    (1'b0),  // GITHUB template: OSD Service toggle excluded
+   .zn_test_mode  (1'b0),  // GITHUB template: OSD Test toggle excluded
    .zn_dsw        (8'hFF),       // all DIP switches ON (normal/defaults)
    // CAT702 keys loaded dynamically via MRA rom index 4 (key_a=KN01/motherboard) and 5 (key_b=KN02/game)
    // CAT702 select is ACTIVE LOW: key_a used for 0x88 path (KN01), key_b used for 0x84 path (KN02)
@@ -1895,6 +1779,7 @@ psx
    .zn_cat702_key_b(zn_cat702_key_b_r),
    .zn_platform    (zn_platform_r[3:0]),
    .zn_system11    (zn_platform_r[4]),   // MRA platform byte bit4 = Namco System 11 mode
+   .zn_gputype1_force(zn_platform_r[5]), // MRA platform byte bit5 = coh100 board (GPU type 1: old Tekken 2 revisions)
    .keycus_id      (zn_keycus_id),       // MRA index-1 byte[1]: 0=none, 1=C406 (Tekken 2)
    .zn_gun1_x      (gun_x),              // System 11 GUN I/F (Point Blank 2 / Gunbarl, C443)
    .zn_gun1_y      (gun_y),
@@ -1981,26 +1866,16 @@ wire cheats_ena;
 wire [31:0] cheats_din;
 wire sdramCh3_done;
 
-//////////////////  build #54: SENTINEL-READBACK INSTRUMENT  /////////////////
-// After the banked-ROM download finishes, actively drive ch3 ourselves to:
-//   1. WRITE 0xCAFEBABE to SDRAM 0xE44804 (slot1 — a normally-zero CLUT entry)
-//   2. READ BACK the 8 contiguous words at 0xE44800..0xE4481C into dbg_loadwords
-// Interpretation of the 8-row overlay:
-//   build #55: MARKER RAMP. WRITE distinct markers 0xA0000000|slot to all 8
-//   words at 0xE44800..0xE4481C, then READ all 8 back into dbg_loadwords.
-//   Readback interpretation (per slot i = read(0xE44800 + i*4)):
-//     slot_i == 0xA000000(i)     -> ch3 write+read are aligned (no skew)
-//     slot_i == 0xA000000(i+1)   -> consistent +1-word skew (write or read)
-//     slot_i == garbage          -> ch3 writes did NOT reach SDRAM at all
-//   The high marker byte 0xA0 distinguishes a real sentinel write from leftover
-//   garbage; the low 3 bits identify which slot's write landed at that address.
-// This does NOT piggyback on game accesses (the flaw in builds #50/#51).
-reg [26:0] sent_addr  = 27'd0;
-reg [31:0] sent_din   = 32'd0;
-reg        sent_req   = 1'b0;
-reg        sent_rnw   = 1'b1;
-reg [3:0]  sent_be    = 4'b1111;
-reg        sentinel_active = 1'b0;
+// GITHUB output template (2026-09-01): the sentinel-readback instrument (a
+// post-download SDRAM marker write/read forensic) is a debug feature and is
+// excluded from this edition. The constant tie-offs below keep the shared ch3
+// mux expressions valid; synthesis folds every sentinel term away.
+wire [26:0] sent_addr  = 27'd0;
+wire [31:0] sent_din   = 32'd0;
+wire        sent_req   = 1'b0;
+wire        sent_rnw   = 1'b1;
+wire [3:0]  sent_be    = 4'b1111;
+wire        sentinel_active = 1'b0;
 // ============================================================================
 // MAIN-RAM ZERO-FILL (2026-06-26): MAME's namcos11 RAM is a zero-initialized
 // ram_device, so the game reads never-written regions (e.g. the EEPROM-default
@@ -2017,18 +1892,8 @@ reg        clr_req     = 1'b0;
 reg        clr_rnw     = 1'b0;
 reg [15:0] clr_settle  = 16'd0;
 reg        dl_seen     = 1'b0;   // a ROM download has occurred (=> SDRAM is initialized & ROMs loaded)
-reg [31:0] dbg_clr_rd  = 32'hDEADBEEF;  // DIAG: readback of SDRAM 0x2B1CE0 after clear (0=>clear worked)
-localparam CLR_IDLE=3'd0, CLR_SETTLE=3'd1, CLR_ISSUE=3'd2, CLR_WAIT=3'd3, CLR_RDISS=3'd4, CLR_RDWAIT=3'd5, CLR_DONE=3'd6;
-wire       clr_active  = (clr_state == CLR_ISSUE) || (clr_state == CLR_WAIT) || (clr_state == CLR_RDISS) || (clr_state == CLR_RDWAIT);
-// DIVERGENCE PROBE 2026-06-27: cycle 4 SDRAM byte-addrs; identify by distinctive expected value.
-//   ph0 0x03E690 -> expect 0x3C028026 (spin code word0)   ph1 0x03E694 -> 0x8C427068 (word1)
-//   ph2 0x267068 -> MAME *0x80267068 = 0x00000000          ph3 0xC00000 -> 0x5782294B (anchor)
-reg  [1:0]  mon_phase = 2'd0;
-reg  [6:0]  mon_pdiv  = 7'd0;   // hold each phase ~128 re-reads (~0.25s) so the overlay value is frame-stable
-// JTAG/ISSP-driven SDRAM read scan (2026-06-27): jtag_addr is driven over JTAG (write_source_data),
-// the ch3 FSM continuously re-reads it, and dbg_clr_rd (the value) is read back over JTAG (read_probe_data).
-// Scan ANY SDRAM byte-address in seconds — no rebuild, no screenshot bit-decode.
-// (jtag_addr declared earlier, before the psx_mister instance, so it can drive .dbg_vram_coord)
+localparam CLR_IDLE=3'd0, CLR_SETTLE=3'd1, CLR_ISSUE=3'd2, CLR_WAIT=3'd3, CLR_DONE=3'd6;
+wire       clr_active  = (clr_state == CLR_ISSUE) || (clr_state == CLR_WAIT);
 wire [31:0] zn_dbg_a0, zn_dbg_a1;
 wire [31:0] zn_dbg_eeprom_o;
 wire [31:0] zn_dbg_gpu;
@@ -2043,19 +1908,9 @@ wire [31:0] zn_dbg_mipspc;  // live MIPS PC (mode 2)
 wire [31:0] zn_dbg_pause;   // pause/ce forensics (mode 4)
 wire [8:0]  dbg_sdram_fsm;   // {lastbank_valid, command[2:0], state[4:0]}
 wire [7:0]  dbg_sdram_drd1;  // ch1 data-ready delay window
-// 2026-07-10 ifetch-death triage: ch1 request/ready edge counters
-reg [7:0] dbg_ch1req_cnt = 8'd0, dbg_ch1rdy_cnt = 8'd0;
-reg ch1req_d = 1'b0, ch1rdy_d = 1'b0;
-always @(posedge clk_1x) begin
-   ch1req_d <= (sdram_req & sdram_rnw);  ch1rdy_d <= sdram_readack;
-   if ((sdram_req & sdram_rnw) & ~ch1req_d) dbg_ch1req_cnt <= dbg_ch1req_cnt + 1'b1;
-   if (sdram_readack & ~ch1rdy_d) dbg_ch1rdy_cnt <= dbg_ch1rdy_cnt + 1'b1;
-end
-wire [26:0] mon_addr = jtag_addr[26:0];
-// probe mux: jtag_addr[31:28] selects what the probe returns
-//   0 = SDRAM word @ jtag_addr[26:0] via ch3 (dbg_clr_rd)   1 = a0 reg   2 = a1 reg   3 = live PC
-//   4 = ch1 (CPU) read VALUE captured at addr jtag_addr[26:0]  -> compare to mode 0 (ch3) = read vs write bug
-wire [31:0] ch1_cap = 32'hDEADBEEF;  // probe retired
+// GITHUB output template (2026-09-01): the ch1 edge counters, SDRAM monitor
+// address, and remaining probe-mux scaffolding were debug instrumentation and
+// are excluded from this edition.
 // DDR3-acceptance forensics (2026-07-05): avalon-level write beats. A write transfers when
 // WE=1 && BUSY=0. Counting both sides splits "GPU emitted writes" (psx_top vram_WE, mode 7)
 // from "framework accepted writes" (here) — the lost-write stage is between them.
@@ -2101,31 +1956,11 @@ end
 //         [8]=GPUSTAT[23] display-disable [7:0]=0.  These are the exact bits that form
 //         FB_BASE (see the assign above), i.e. where the scaler is told to scan out from.
 //         A wrong DisplayOffsetY (e.g. stuck in the far half of VRAM) *is* cause (b) proven.
-wire [31:0] jtag_probe = (jtag_addr[31:28]==4'd5) ? snd_triage :      // KEPT: sound triage (QA gate)
-                         (jtag_addr[31:28]==4'hB) ? zn_dbg_gpustat :  // KEPT: GPUSTAT (boot-liveness gate)
-                         (jtag_addr[31:28]==4'hD) ? c76_status :      // KEPT: C76 health gate
-                         32'h0BADC0DE;
-// RELEASE PROBE STRIP (2026-07-27, SYSTEM11-RELEASE-20260727): all forensic modes disconnected --
-// SDRAM/VRAM readback, MIPS PC, display state, gun diags (4/6/7), C76 A-D + mailbox forensics
-// (8/9/A/C/F) and the dpram window (E). Only the three QA-gate modes stay, exactly as the
-// 20260712/20260720 releases shipped: the automated boot test reads 5/B/D and stripping them would
-// blind it. No keep/preserve attributes are used, so synthesis prunes the upstream probe cones.
-// To restore the full set for debugging: git checkout feature/system11-titles -- SYSTEM11.sv  // mode F DIAG coin->C352 keyon: [15:8]coin-edges [7:0]max-keyons-after-coin
-altsource_probe #(
-   .sld_auto_instance_index ("YES"),
-   .sld_instance_index      (0),
-   .instance_id             ("MEMR"),
-   .probe_width             (32),
-   .source_width            (32),
-   .source_initial_value    ("0"),
-   .enable_metastability    ("NO")
-) u_issp_memr (
-   .source     (jtag_addr),
-   .probe      (jtag_probe),
-   .source_clk (clk_1x),
-   .source_ena (1'b1)
-);
-wire [26:0] clr_ch3_addr = ((clr_state == CLR_RDISS) || (clr_state == CLR_RDWAIT)) ? mon_addr : {5'b0, clr_addr, 2'b00};
+// GITHUB output template (2026-09-01): the altsource_probe ISSP instance and
+// its probe mux (including the three dev-QA modes 5/B/D) are excluded from
+// this edition — no JTAG debug instrumentation ships in the .rbf. To restore
+// for development, take this region from the PATREON-side branch.
+wire [26:0] clr_ch3_addr = {5'b0, clr_addr, 2'b00};
 always @(posedge clk_1x) begin
    clr_req <= 1'b0;
    if (ioctl_download) dl_seen <= 1'b1;
@@ -2138,94 +1973,21 @@ always @(posedge clk_1x) begin
                   else clr_settle <= clr_settle + 1'b1;
       CLR_ISSUE:  begin clr_req <= 1'b1; clr_state <= CLR_WAIT; end   // issue 0-write
       CLR_WAIT:   if (sdramCh3_done) begin
-                     if (clr_addr == 20'hFFFFF) begin clr_rnw <= 1'b1; clr_state <= CLR_RDISS; end  // 4MB done -> read back 0x2B1CE0
+                     if (clr_addr == 20'hFFFFF) begin ram_cleared <= 1'b1; clr_state <= CLR_DONE; end  // 4MB zero-fill complete
                      else begin clr_addr <= clr_addr + 1'b1; clr_state <= CLR_ISSUE; end
                   end
-      CLR_RDISS:  begin clr_req <= 1'b1; clr_state <= CLR_RDWAIT; end // issue read of 0x2B1CE0
-      CLR_RDWAIT: if (sdramCh3_done) begin dbg_clr_rd <= cheats_din; ram_cleared <= 1'b1; clr_settle <= 16'd0; clr_state <= CLR_DONE; end
-      // RUNTIME MONITOR: periodically (~every 65536 clk_1x) re-read 0x2B1CE0 via ch3 so dbg_clr_rd
-      // shows the LIVE content while the game runs. 0x00 (vs CPU's 0x02) => ch1 READ bug; non-0 => content issue.
-      // ★ CH3-COLLISION FIX: the periodic monitor re-read may only run while the C76 SPROG
-      // reader is idle (no rd pending) — otherwise its completion is eaten as a C76 opcode.
-      // ★ 2026-07-11: same guard for the C352 WAVE reader — a monitor read starting while a
-      // wave fetch was in flight hijacked the ch3 mux (clr_active) and the shared sdramCh3_done,
-      // so the C352 latched the MONITOR's data (arbitrary RAM content) as a PCM sample: a
-      // periodic (~517 Hz) click source = audible static even without SDRAM contention.
-      CLR_DONE:   if (&clr_settle && (sprog_st == 2'd0) && ~c76_sprog_rd
-                                  && (wave_st  == 2'd0) && ~c76_wave_rd) begin
-                     mon_pdiv <= mon_pdiv + 1'b1;
-                     if (&mon_pdiv) mon_phase <= mon_phase + 1'b1;  // advance phase only every 128 re-reads
-                     clr_rnw <= 1'b1; clr_state <= CLR_RDISS;
-                  end else if (~&clr_settle) clr_settle <= clr_settle + 1'b1;
+      // GITHUB output template (2026-09-01): the post-clear readback and the
+      // periodic runtime re-read monitor were ch3 debug diagnostics and are
+      // excluded from this edition. The zero-fill itself is functional (MAME's
+      // main RAM is zero-initialized; games read never-written regions) and
+      // completes here, releasing reset via ram_cleared.
+      CLR_DONE:   ; // terminal — ch3 stays with its runtime owners
    endcase
 end
 
-reg [2:0]  sent_state = 3'd0;
-reg [2:0]  sent_idx   = 3'd0;
-reg [8:0]  sent_delay = 9'd0;
-reg        dl_prev    = 1'b0;
 
-localparam SENT_IDLE = 3'd0, SENT_WAIT_DL = 3'd1, SENT_ISSUE_WR = 3'd2,
-           SENT_WAIT_WR = 3'd3, SENT_ISSUE_RD = 3'd4, SENT_WAIT_RD = 3'd5,
-           SENT_DONE = 3'd6;
-
-always @(posedge clk_1x) begin
-   dl_prev  <= bankedrom_download;
-   sent_req <= 1'b0;
-   case (sent_state)
-      SENT_IDLE:
-         if (dl_prev && ~bankedrom_download) begin
-            sent_delay <= 9'd0;
-            sent_state <= SENT_WAIT_DL;          // settle after last download write
-         end
-      SENT_WAIT_DL: begin
-         sent_delay <= sent_delay + 1'b1;
-         if (&sent_delay) begin
-            sentinel_active <= 1'b1;
-            sent_idx   <= 3'd0;
-            sent_addr  <= 27'h0E44800;
-            sent_state <= SENT_ISSUE_WR;
-         end
-      end
-      SENT_ISSUE_WR: begin
-         sent_din  <= {8'hA0, 21'd0, sent_idx};  // marker 0xA0000000 | slot
-         sent_rnw  <= 1'b0;
-         sent_be   <= 4'b1111;
-         sent_req  <= 1'b1;
-         sent_state <= SENT_WAIT_WR;
-      end
-      SENT_WAIT_WR:
-         if (sdramCh3_done) begin
-            if (sent_idx == 3'd7) begin
-               sent_idx   <= 3'd0;
-               sent_addr  <= 27'h0E44800;
-               sent_rnw   <= 1'b1;
-               sent_state <= SENT_ISSUE_RD;
-            end else begin
-               sent_idx   <= sent_idx + 1'b1;
-               sent_addr  <= sent_addr + 27'd4;
-               sent_state <= SENT_ISSUE_WR;
-            end
-         end
-      SENT_ISSUE_RD: begin
-         sent_req   <= 1'b1;
-         sent_state <= SENT_WAIT_RD;
-      end
-      SENT_WAIT_RD:
-         if (sdramCh3_done) begin
-            dbg_loadwords[{sent_idx, 5'b00000} +: 32] <= cheats_din; // ch3_dout
-            if (sent_idx == 3'd7) begin
-               sentinel_active <= 1'b0;
-               sent_state <= SENT_DONE;
-            end else begin
-               sent_idx   <= sent_idx + 1'b1;
-               sent_addr  <= sent_addr + 27'd4;
-               sent_state <= SENT_ISSUE_RD;
-            end
-         end
-      SENT_DONE: ; // latch; ch3 returns to cheats
-   endcase
-end
+// (The sentinel-readback state machine that lived here is excluded from the
+// GITHUB output template — see the tie-offs above.)
 
 // (2026-07-06 probe cleanup: CH1-predecessor monitor / ch1_cap / live-PC spin capture
 // removed — their questions are answered; see project memory. Freed for routing.)
@@ -2395,27 +2157,17 @@ wire [2:0] video_hResMode;
 
 wire ce_pix;
 wire [7:0] r,g,b;
-wire [6:0] zn_debug_out;  // DIAGNOSTIC build #17: verify Y-wrap fix. See psx_top.vhd.
-wire [31:0] zn_debug_val; // now carries the FAULTING INSTRUCTION WORD (opcode1 @ first-fault EPC)
-
-// JTAG ISSP DEBUG 2026-06-24: scriptable over-JTAG readout (replaces the screenshot-decode loop).
-// probe[87:0] = { zn_debug_val[31:0], cache_data[31:0], c76_pc[23:0] }. Validation anchor:
-// zn_debug_val should read 0xFFB10170 on HW (the known MIPS panic+exc state) — confirms the JTAG
-// flow end-to-end; cache_data exposes the live 32-bit SDRAM cache read data (the corruption target).
-// Read via quartus_stp Tcl: read_probe_data -instance_index N (see reference_jtag_issp memory).
-// 2026-07-07 fit reclaim: 120-bit DBG0 ISSP retired (MEMR mode-mux ISSP covers all needs).
-// 2026-07-12 fit reclaim: T2 la_ logic-analyzer readout removed (was already tied off).
-wire [2047:0] trace_flat; // in-core trace buffer: 64 samples x 32 bits (JTAG-free logic analyzer)
-wire [31:0]   trace_meta; // [31]=frozen [30]=triggered [5:0]=head (ring index of oldest sample)
-wire [31:0] zn_debug_addr; // build #51: computed SDRAM byte address latched at green anchor (expect 0x00E44810)
-wire [255:0] zn_debug_words; // build #52: 8 contiguous bank0 words [0x1F644800,0x1F644820), word0 in low 32 bits
-// build #53: LOAD-TIME capture of the 8 banked-ROM words written to SDRAM [0xE44800,0xE44820)
-// during bankedrom_download. Game-independent — frozen after load. word slot s in bits [s*32 +: 32].
-// Expected loaded ROM sequence: 0=0x00007FFF 1=0 2=0 3=0 4=0x00200000 5=0x00200020 6=0x00200020 7=0x00400020.
-reg  [255:0] dbg_loadwords = 256'd0;
-// build #52/#53: overlay bit index — row = dbg_vpix[4:2] (word 0..7), col MSB-left = 31 - dbg_hpix[7:3]
-wire [7:0] dbg_word_bitidx = dbg_vpix[4:2]*8'd32 + (8'd31 - {3'b0, dbg_hpix[7:3]});
-wire       dbg_word_bit    = dbg_loadwords[dbg_word_bitidx];
+// GITHUB output template (2026-09-01): the wires below only sink psx_top's
+// diagnostic output ports so the instantiation stays complete; nothing reads
+// them in this edition, so their upstream cones prune at synthesis. The
+// load-word capture, overlay indexing, and JTAG readout that consumed them
+// are excluded.
+wire [6:0] zn_debug_out;
+wire [31:0] zn_debug_val;
+wire [2047:0] trace_flat;
+wire [31:0]   trace_meta;
+wire [31:0] zn_debug_addr;
+wire [255:0] zn_debug_words;
 
 wire hack_480p = status[89];
 
@@ -2483,7 +2235,7 @@ always @(posedge CLK_VIDEO) begin
 end
 wire [11:0] xh_dx = (xh_hcnt >= xh_cx) ? (xh_hcnt - xh_cx) : (xh_cx - xh_hcnt);
 wire [11:0] xh_dy = (xh_vcnt >= xh_cy) ? (xh_vcnt - xh_cy) : (xh_cy - xh_vcnt);
-wire        xhair = status[100] & (zn_keycus_id == 8'h09)
+wire        xhair = status[100] & zn_gun_game
                     & ~video_gamma.hb & ~video_gamma.vb
                     & (((xh_dy == 12'd0) & (xh_dx <= 12'd6))     // horizontal arm
                      | ((xh_dx == 12'd0) & (xh_dy <= 12'd6)));   // vertical arm
@@ -2491,120 +2243,18 @@ wire        xhair = status[100] & (zn_keycus_id == 8'h09)
 // second reticle parked at screen centre. Drawn GREEN to distinguish it from P1's white.
 wire [11:0] xh2_dx = (xh_hcnt >= xh2_cx) ? (xh_hcnt - xh2_cx) : (xh2_cx - xh_hcnt);
 wire [11:0] xh2_dy = (xh_vcnt >= xh2_cy) ? (xh_vcnt - xh2_cy) : (xh2_cy - xh_vcnt);
-wire        xhair2 = status[100] & (zn_keycus_id == 8'h09) & p2_gun_active
+wire        xhair2 = status[100] & zn_gun_game & p2_gun_active
                     & ~video_gamma.hb & ~video_gamma.vb
                     & (((xh2_dy == 12'd0) & (xh2_dx <= 12'd6))
                      | ((xh2_dx == 12'd0) & (xh2_dy <= 12'd6)));
 
-// Native (pre-CRT-Adjust) output stream: gamma-corrected video with the
-// light-gun crosshair already overlaid, so the crosshair is subject to the
-// same analog geometry as the picture it aims at.
-wire [7:0] native_r = xhair ? 8'hFF : xhair2 ? 8'h00 : video_gamma.red;
-wire [7:0] native_g = (xhair | xhair2) ? 8'hFF : video_gamma.green;
-wire [7:0] native_b = xhair ? 8'hFF : xhair2 ? 8'h00 : video_gamma.blue;
-
-////////////////////////////  CRT ADJUST  ///////////////////////////////
-// Core-side analog CRT geometry (MiSTer-CRT-Adjust / crt_adjust.sv): H-Size,
-// H-Position, V-Shift from the OSD, applied to the post-gamma stream at the
-// video-output boundary. No sys/ edits.
-//
-// System 11 specifics vs the reference (fixed-res arcade) integration:
-//  * PSX resolution is variable -> the read-period base is LUT'd from the
-//    core's own video_hResMode (256/320/368/512/640 -> clk_vid/pixel div
-//    10/8/7/5/4 -> 40/32/28/20/16 quarter-cycles) instead of a hardcoded 64.
-//  * Default Off -> analog and HDMI both bit-native until the user opts in.
-
-// -- decode OSD (uniform signed 5-bit fields, ±16; registered on native ce_pix)
-reg              crt_on;
-reg signed [4:0] crt_hsize_s, crt_hpos_s, crt_vsh_s;
-always @(posedge CLK_VIDEO) if (ce_pix) begin
-	crt_on      <= status[112];
-	crt_hsize_s <= $signed(status[117:113]);
-	crt_hpos_s  <= $signed(status[122:118]);
-	crt_vsh_s   <= $signed(status[127:123]);
-end
-wire signed [8:0] crt_hpos_off = {{4{crt_hpos_s[4]}}, crt_hpos_s};   // ±16 px
-wire signed [5:0] crt_vsh_off  = {crt_vsh_s[4], crt_vsh_s};          // ±16 lines
-
-// -- read clock-enable: quarter-cycle stepped, base from the active PSX res.
-// video_hResMode: 0=256,1=320,2=368,3=512,4=640 -> div 10,8,7,5,4 -> base*4.
-logic [7:0] crt_base_lut[8];
-assign      crt_base_lut = '{8'd40, 8'd32, 8'd28, 8'd20, 8'd16, 8'd16, 8'd16, 8'd16};
-wire [7:0] crt_base_q  = crt_base_lut[video_hResMode];
-wire [7:0] crt_rd_per  = crt_base_q + {{3{crt_hsize_s[4]}}, crt_hsize_s};  // base ± hsize
-
-wire       crt_hs_ref;                    // registered inside module -> no comb loop
-reg        crt_hs_ref_d;
-always @(posedge CLK_VIDEO) crt_hs_ref_d <= crt_hs_ref;
-wire       crt_hs_ref_rise = crt_hs_ref & ~crt_hs_ref_d;
-
-reg  [7:0] crt_rd_acc;
-wire       crt_rd_tick = (crt_rd_acc + 8'd4) >= crt_rd_per;
-always @(posedge CLK_VIDEO) begin
-	if      (crt_hs_ref_rise) crt_rd_acc <= 8'd0;
-	else if (crt_rd_tick)     crt_rd_acc <= crt_rd_acc + 8'd4 - crt_rd_per;
-	else                      crt_rd_acc <= crt_rd_acc + 8'd4;
-end
-wire crt_rd_ce = crt_on ? crt_rd_tick : ce_pix;
-
-// -- the module
-wire [7:0] crt_r, crt_g, crt_b;
-wire       crt_hs, crt_vs, crt_hb, crt_vb;
-crt_adjust #(
-	.VTOTAL   (640),      // V-Shift shreg depth (>= max PSX lines/frame incl. 480i)
-	.HTOTAL   (1024),     // HSync shreg depth  (>= max PSX line length)
-	.HPOS_MODE(1)         // CONTENTSHIFT (wide/centered PSX games)
-) u_crt_adjust (
-	.clk       (CLK_VIDEO),
-	.pxl_cen   (ce_pix),                        // write rate (native pixel)
-	.pxl2_cen  (crt_rd_ce),                     // read rate  (H-Size)
-	.active    (crt_on),
-	.hsize     (crt_hsize_s),
-	.hoffset   (crt_hpos_off),
-	.voffset   (crt_vsh_off),
-	.r_in      (native_r),
-	.g_in      (native_g),
-	.b_in      (native_b),
-	.hs_in     (video_gamma.hs),
-	.vs_in     (video_gamma.vs),
-	.hb_in     (video_gamma.hb | video_gamma.vb),
-	.vb_in     (video_gamma.vb),               // TRUE vblank (keeps OSD visible)
-	.r_out     (crt_r), .g_out (crt_g), .b_out (crt_b),
-	.hs_out    (crt_hs), .vs_out (crt_vs),
-	.hb_out    (crt_hb), .vb_out (crt_vb),
-	.hs_ref_out(crt_hs_ref)
-);
-
-// -- OSD stays centered on the physical screen: a DE window whose rising edge
-// is anchored to the NATIVE active region, closing on the stretched active end.
-wire crt_native_active = ~(video_gamma.hb | video_gamma.vb);
-reg  crt_native_active_d;
-always @(posedge CLK_VIDEO) if (ce_pix) crt_native_active_d <= crt_native_active;
-wire crt_native_rise = crt_native_active & ~crt_native_active_d;
-
-wire crt_str_active = ~crt_hb;
-reg  crt_str_active_d;
-always @(posedge CLK_VIDEO) if (crt_rd_ce) crt_str_active_d <= crt_str_active;
-wire crt_str_fall = crt_str_active_d & ~crt_str_active;
-
-reg crt_deosd;
-always @(posedge CLK_VIDEO) begin
-	if      (crt_native_rise) crt_deosd <= 1'b1;
-	else if (crt_str_fall)    crt_deosd <= 1'b0;
-end
-
-// CRT Adjust output mux. crt_on=0 -> native passthrough (analog + HDMI
-// untouched). crt_on=1 -> analog geometry from crt_adjust; CE_PIXEL becomes
-// the (H-Size) read rate so the DAC holds each pixel for its adjusted
-// duration. The internal write side stays on the native ce_pix, so the mux
-// never disturbs raster generation.
-assign CE_PIXEL = crt_on ? crt_rd_ce : ce_pix;
-assign VGA_R    = crt_on ? crt_r     : native_r;
-assign VGA_G    = crt_on ? crt_g     : native_g;
-assign VGA_B    = crt_on ? crt_b     : native_b;
-assign VGA_VS   = crt_on ? crt_vs    : video_gamma.vs;
-assign VGA_HS   = crt_on ? crt_hs    : video_gamma.hs;
-assign VGA_DE   = crt_on ? crt_deosd : ~(video_gamma.vb | video_gamma.hb);
+assign CE_PIXEL = ce_pix;
+assign VGA_R    = xhair ? 8'hFF : xhair2 ? 8'h00 : video_gamma.red;
+assign VGA_G    = (xhair | xhair2) ? 8'hFF : video_gamma.green;
+assign VGA_B    = xhair ? 8'hFF : xhair2 ? 8'h00 : video_gamma.blue;
+assign VGA_VS   = video_gamma.vs;
+assign VGA_HS   = video_gamma.hs;
+assign VGA_DE   = ~(video_gamma.vb | video_gamma.hb);
 assign VGA_F1   =  status[14] ? 1'b0 : video_aspect.interlace;
 assign VGA_SL = 0;
 logic [11:0] aspect_x, aspect_y;
@@ -2675,14 +2325,6 @@ localparam reg [23:0] aspect_ratio_lut_pal[160] = '{
 };
 
 logic [11:0] h_pos, v_pos, vb_pos, v_total;
-logic [9:0]  dbg_hpix;   // visible-area horizontal pixel counter (10-bit, max 1023 — no wrap for any PSX width)
-logic [8:0]  dbg_vpix;   // visible-area line counter (9-bit: covers the 64-row trace grid)
-// In-core trace grid indexing: 64 samples at vpix 40.. (2px each), 32 bits at 8px each, MSB left.
-wire [5:0]  trc_sample = (dbg_vpix - 9'd40) >> 1;            // 2px/sample (fits the ~166-line visible area)
-wire [4:0]  trc_bit    = 5'd31 - dbg_hpix[7:3];             // bit 31 leftmost
-wire [11:0] trc_index  = ({6'b0, trc_sample} * 12'd32) + {7'b0, trc_bit};
-wire        trc_pixel  = trace_flat[trc_index];
-logic        dbg_hbl_prev, dbg_vbl_prev;
 logic [11:0] hb_start_lut[8];
 logic [11:0] hb_end_lut[8];
 logic [11:0] hb_start, hb_end;
@@ -2696,7 +2338,7 @@ always_comb begin
 	hb_end = hb_end_lut[video_hResMode];
 end
 
-always_ff @(posedge CLK_VIDEO) if (ce_pix) begin   // native write-side enable (not the muxed CE_PIXEL output)
+always_ff @(posedge CLK_VIDEO) if (CE_PIXEL) begin
 	logic old_vb;
 	old_vb <= vbl;
 	video_aspect.hs <= hs;
@@ -2745,94 +2387,21 @@ always_ff @(posedge CLK_VIDEO) if (ce_pix) begin   // native write-side enable (
 	if (status[62] || hack_480p || (status[54:53] > 0))
 		video_aspect.hb <= hbl;
 
-	// Visible-area pixel counters for debug overlay
-	dbg_hbl_prev <= hbl;
-	dbg_vbl_prev <= vbl;
-	if (dbg_vbl_prev && ~vbl)          dbg_vpix <= 0;  // vblank ended: reset line counter
-	else if (dbg_hbl_prev && ~hbl && ~vbl) dbg_vpix <= dbg_vpix + 1'd1;  // new visible line
-	if (dbg_hbl_prev && ~hbl)          dbg_hpix <= 0;  // start of visible area on line
-	else if (~hbl)                      dbg_hpix <= dbg_hpix + 1'd1;
-
-	// build #52: 8 contiguous bank0 SDRAM words [0x1F644800,0x1F644820) captured into
-	// zn_debug_words. Render as 8 stacked rows (row r = dbg_vpix[4:2] = word slot r),
-	// each 3px tall (drawn when dbg_vpix[1:0] != 3 leaves a 1px gap), MSB (bit31) leftmost,
-	// 8px per bit → 256px wide. Lit white = bit set. Per-byte dim tint when bits are 0:
-	//   byte3 (31:24)=red, byte2 (23:16)=green, byte1 (15:8)=blue, byte0 (7:0)=gray.
-	// Expected ROM-stream slots: 0=0x00007FFF 1=0 2=0 3=0 4=0x00200000 5=0x00200020
-	//                            6=0x00200020 7=0x00400020. Mismatch reveals the load defect.
-	// build #80: GENERIC triage bars for any title (sticky latches).
-	//   bar0 RED   = ram_exec_seen     (CPU executing instructions from game RAM, sticky)
-	//   bar1 GREEN = raster_pixel_seen (GPU rasterizer ever produced a VRAM pixel write, sticky)
-	//   bar2 BLUE  = gpu_accessed_seen (CPU ever wrote/read GPU registers, sticky)
-	// Read: all 3 lit → CPU+GPU alive (hang elsewhere). RED only → no GPU init. All dark → CPU stuck in BIOS.
-	// build #155: debug bar overlay gated by OSD status[93]. Default OFF so games render
-	// cleanly; toggle on via OSD "Debug" menu (or mister_debug_bars_toggle.sh) when
-	// instrument output is needed.
-	// Auto-hide: in System 11 mode the triage bars show until the MIPS reaches game
-	// code (dbg_reached_game), then disappear so actual game video is visible. status[93]
-	// forces them back on via OSD any time.
-	// DIAG force-on for System 11 (proven-rendering condition). Shows the dbg_lw_input
-	// (SDRAM-controller output for the lw) so we can split download-vs-delivery.
-	// CLEANUP 2026-06-13: only the zn_debug_val value row remains (the zn_debug_words bar
-	// rows are retired so that wire is unused and its psx_top latch chain prunes). Single
-	// 32-bit readout row at dbg_vpix 24..30, MSB(bit31) leftmost, 8px/bit, white=1 gray=0.
-	if (status[93] && ~vbl && ~hbl && dbg_hpix < 10'd256) begin
-		// FAULTING INSTRUCTION WORD row (vpix 16-22): zn_debug_val now = opcode1 @ first-fault EPC.
-		// We already know exc=0xB(CpU), EPC=0x80010170. op[31:26]=0x12 => phantom COP2/GTE (corrupt
-		// word confirmed); 0x29 => correct sh (opcode1 capture stale, look elsewhere).
-		// VERTICAL BIT-BAR readout of zn_debug_val (= 0x65C readback). 32 stacked FULL-WIDTH rows,
-		// 4px tall each, MSB(bit31) on top: vpix 16..143. Full-width bars are immune to the
-		// horizontal squish. BRIGHT = bit is 1, DIM = bit is 0. Nibble parity tints the color so
-		// groups of 4 are countable: even nibble => white/gray, odd nibble => cyan/dark-blue.
-		// Read top->bottom = bit31..bit0 to recover the exact 32-bit value the CPU loaded from 0x65C.
-		// Boundary-unambiguous bit readout: PALETTE ALTERNATES EVERY ROW so adjacent bits always
-		// differ in hue regardless of value => exactly 32 color-runs are countable even under the
-		// non-integer vertical scaling. EVEN row: 1=WHITE 0=RED. ODD row: 1=CYAN 0=GREEN.
-		// Read top->bottom = bit31..bit0; WHITE/CYAN=1, RED/GREEN=0.
-		if (dbg_vpix >= 9'd16 && dbg_vpix < 9'd144) begin
-			if ((((dbg_vpix - 9'd16) >> 2) & 1) == 0) begin       // even bit row
-				if (dbg_clr_rd[31 - ((dbg_vpix - 9'd16) >> 2)]) begin
-					video_aspect.red <= 8'hFF; video_aspect.green <= 8'hFF; video_aspect.blue <= 8'hFF; // WHITE=1
-				end else begin
-					video_aspect.red <= 8'hFF; video_aspect.green <= 8'h00; video_aspect.blue <= 8'h00; // RED=0
-				end
-			end else begin                                        // odd bit row
-				if (dbg_clr_rd[31 - ((dbg_vpix - 9'd16) >> 2)]) begin
-					video_aspect.red <= 8'h00; video_aspect.green <= 8'hFF; video_aspect.blue <= 8'hFF; // CYAN=1
-				end else begin
-					video_aspect.red <= 8'h00; video_aspect.green <= 8'hFF; video_aspect.blue <= 8'h00; // GREEN=0
-				end
-			end
-		end
-	end
+	// GITHUB output template (2026-09-01): the boot-debug bar overlay (the
+	// status[93] bit-bar renderer and its visible-area pixel counters) is
+	// excluded from this edition.
 
 end
 
-// Pause overlay: when the joystick "pause" button (joy[18]) toggles button_paused on,
-// replace video with the XN logo + scrolling Patreon credits. Other pause sources
-// (OSD-open, savestate) still display the last game frame.
-wire [7:0] pause_overlay_r, pause_overlay_g, pause_overlay_b;
-pause_overlay u_pause_overlay (
-	.clk         (CLK_VIDEO),
-	.ce_pix      (ce_pix),      // native rate: upstream of the CRT Adjust boundary
-	.hblank      (video_aspect.hb),
-	.vblank      (video_aspect.vb),
-	.enable      (button_paused),
-	.rotate180   (1'b0),        // no screen-flip option on System 11
-	.vertical    (1'b0),        // all System 11 titles are horizontal (no TATE)
-	.vid_r_in    (video_aspect.red),
-	.vid_g_in    (video_aspect.green),
-	.vid_b_in    (video_aspect.blue),
-	.vid_r_out   (pause_overlay_r),
-	.vid_g_out   (pause_overlay_g),
-	.vid_b_out   (pause_overlay_b)
-);
+// GITHUB output template (2026-09-01): the pause screen (credits overlay) is
+// excluded from this edition. Pausing (button or OSD) still freezes the core;
+// every pause source now simply displays the last game frame.
 
 assign gamma_bus[21] = 1;
 gamma_corr gamma(
 	.clk_sys(gamma_bus[20]),
 	.clk_vid(CLK_VIDEO),
-	.ce_pix(ce_pix),            // native rate: upstream of the CRT Adjust boundary
+	.ce_pix(CE_PIXEL),
 
 	.gamma_en(gamma_bus[19]),
 	.gamma_wr(gamma_bus[18]),
@@ -2843,7 +2412,7 @@ gamma_corr gamma(
 	.VSync(video_aspect.vs),
 	.HBlank(video_aspect.hb),
 	.VBlank(video_aspect.vb),
-	.RGB_in({pause_overlay_r, pause_overlay_g, pause_overlay_b}),
+	.RGB_in({video_aspect.red, video_aspect.green, video_aspect.blue}),
 
 	.HSync_out(video_gamma.hs),
 	.VSync_out(video_gamma.vs),
@@ -2942,16 +2511,6 @@ reg ackglitch;
 
 assign clk8Snac = bitCnt < 8 ? clk9Snac : 1'b1;
 
-// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: the SNAC process drives its own reg;
-// the final USER_OUT is muxed below so the joydb wrapper can share the port.
-reg [6:0] snac_user_out = 7'h7F;
-// SNAC preempts joydb on the shared USER port. snac_active also forces
-// joy_type=Off inside the wrapper, so USER_OUT_DRIVE is 8'hFF and
-// USER_PP_DRIVE is 8'h00 (all pins open-drain / released) whenever SNAC owns
-// the port. Bit 7 stays released in the SNAC arm (the PSX harness never uses it).
-assign USER_OUT = snac_active ? {1'b1, snac_user_out} : USER_OUT_DRIVE;
-// [MiSTer-DB9 END]
-
 always @(posedge clk_1x)
 begin
 
@@ -2968,27 +2527,27 @@ begin
    ackglitch  <= ~USER_IN3_1 && ~USER_IN3_2 && ~USER_IN3_3 && ~USER_IN3_4 ? 1'b0 : 1'b1;
 
 	if (snacPort1 || snacPort2) begin
-		snac_user_out[0] <= ~selectedPort2Snac;
-		snac_user_out[1] <= ~selectedPort1Snac;
-		snac_user_out[2] <= Cmd;
-		snac_user_out[3] <= 1'b1; //ACK
-		snac_user_out[4] <= 1'b1; //DAT
-		snac_user_out[5] <= oldClk8;
+		USER_OUT[0] <= ~selectedPort2Snac;
+		USER_OUT[1] <= ~selectedPort1Snac;
+		USER_OUT[2] <= Cmd;
+		USER_OUT[3] <= 1'b1; //ACK
+		USER_OUT[4] <= 1'b1; //DAT
+		USER_OUT[5] <= oldClk8;
 		ack         <= ~ackglitch ? USER_IN3_2 : 1'b1;
 		Dat         <= USER_IN4_2;
 
 		if ((pad1ID == 8'h63 || pad2ID == 8'h63) && (pad1ID != 8'h31 || pad2ID != 8'h31)) begin //quirk for guncon, irq is N/C in guncon. so using irq line and outputting csync on snac for g-con. only if justifier isn't connected
-			snac_user_out[6] <= ~csync;
+			USER_OUT[6] <= ~csync;
 			irq10Snac   <= 1'b0;
 			csync       <= VGA_HS ^ VGA_VS;//real csync shifts HSync during VSync, should be close enough to work	with guncon
 		end
 		else begin
-			snac_user_out[6] <= 1'b1;
+			USER_OUT[6] <= 1'b1;
 			irq10Snac   <= ~USER_IN6_2;
 		end
 	end
 	else begin
-		snac_user_out <= 7'h7F;
+		USER_OUT  <= '1;
 		irq10Snac <= 1'b0;
 		ack       <= 1'b1;
 		Dat       <= 1'b1;

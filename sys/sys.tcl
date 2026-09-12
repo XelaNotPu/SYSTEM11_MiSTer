@@ -28,9 +28,6 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IO_S*
 #============================================================
 # USER PORT
 #============================================================
-# [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: PIN_AE15 (was SD_SPI_CS) is the 8th user-port pin
-set_location_assignment PIN_AE15 -to USER_IO[7]
-# [MiSTer-DB9 END]
 set_location_assignment PIN_AF17 -to USER_IO[6]
 set_location_assignment PIN_AF15 -to USER_IO[5]
 set_location_assignment PIN_AG16 -to USER_IO[4]
@@ -103,9 +100,7 @@ set_instance_assignment -name ALLOW_SYNCH_CTRL_USAGE OFF -to *|SDRAM_*
 #============================================================
 # SPI SD
 #============================================================
-# [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: PIN_AE15 reassigned to USER_IO[7]
-#set_location_assignment PIN_AE15 -to SD_SPI_CS
-# [MiSTer-DB9 END]
+set_location_assignment PIN_AE15 -to SD_SPI_CS
 set_location_assignment PIN_AH8  -to SD_SPI_MISO
 set_location_assignment PIN_AG8  -to SD_SPI_CLK
 set_location_assignment PIN_U13  -to SD_SPI_MOSI

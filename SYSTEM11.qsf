@@ -239,13 +239,16 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ddram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/savestate_ui.sv
 set_global_assignment -name VERILOG_FILE rtl/hps_ext.v
-set_global_assignment -name VERILOG_FILE rtl/pause_overlay.v
-set_global_assignment -name MIF_FILE rtl/pause_assets/patreon_text.mif
-set_global_assignment -name MIF_FILE rtl/pause_assets/patreon_color.mif
-set_global_assignment -name MIF_FILE rtl/pause_assets/font_8x16.mif
-set_global_assignment -name SEARCH_PATH rtl/pause_assets
 set_global_assignment -name SDC_FILE SYSTEM11.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE SYSTEM11.sv
+# (SI drive-strength experiment 2026-06-17 reverted: 8mA had ZERO effect on the corruption
+#  => it is NOT signal integrity; it's a logic/burst-addressing bug.)
+set_global_assignment -name SEED 10
+
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 set_instance_assignment -name FAST_INPUT_REGISTER ON -to SDRAM_DQ[*]
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to HDMI_TX_CLK
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to HDMI_TX_DE
@@ -258,8 +261,6 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW 8MA -to AUDIO_*
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to IO_S*
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDCD_SPDIF
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDIO_*
-# (SI drive-strength experiment 2026-06-17 reverted: 8mA had ZERO effect on the corruption
-#  => it is NOT signal integrity; it's a logic/burst-addressing bug.)
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SDRAM_*
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to SD_SPI*
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to USER_IO[*]
@@ -313,4 +314,3 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SDIO_DAT[*]
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to SD_SPI*
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to USER_IO[*]
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to VGA_EN
-set_global_assignment -name SEED 10
