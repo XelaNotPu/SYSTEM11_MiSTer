@@ -306,6 +306,7 @@ entity psx_mister is
       zn_platform     : in  std_logic_vector(3 downto 0) := "0000";
       zn_system11     : in  std_logic := '0';  -- Namco System 11 mode
       keycus_id       : in  std_logic_vector(7 downto 0) := x"00";  -- System 11 KEYCUS type
+      zn_gputype1_force : in std_logic := '0'; -- MRA platform byte bit5 = coh100 board (GPU type 1)
       -- System 11 GUN I/F (Point Blank 2 / Gunbarl, C443): absolute gun counters, pre-clamped
       zn_gun1_x       : in  std_logic_vector(15 downto 0) := (others => '0');
       zn_gun1_y       : in  std_logic_vector(15 downto 0) := (others => '0');
@@ -755,6 +756,7 @@ begin
       zn_platform     => zn_platform,
       zn_system11     => zn_system11,
       keycus_id       => keycus_id,
+      zn_gputype1_force => zn_gputype1_force,
       zn_gun1_x       => zn_gun1_x,
       zn_gun1_y       => zn_gun1_y,
       zn_gun2_x       => zn_gun2_x,

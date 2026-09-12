@@ -1,6 +1,7 @@
 <p align="center">
   <img src="art/XelaNotPu-LogoTransparent-GithubSocial.png" alt="SYSTEM11 MiSTer banner" width="100%">
 </p>
+
 # Namco System 11 for MiSTer
 
 FPGA implementation of the [Namco System 11](https://en.wikipedia.org/wiki/Namco_System_11) arcade board for the [MiSTer platform](https://github.com/MiSTer-devel/Main_MiSTer/wiki).
@@ -9,13 +10,52 @@ Namco System 11 (1994) is an arcade board built around Sony PlayStation technolo
 
 The core is derived from the excellent [PSX_MiSTer](https://github.com/MiSTer-devel/PSX_MiSTer) core by **Robert Peip (FPGAzumSpass)**, which provides the CPU, GPU, GTE, DMA, and memory subsystem foundation.
 
-## New in 20260818
+## New in 20260911
 
-**Core renamed:** the release bitstream is now `Arcade-SYSTEM11_20260818.rbf` and every MRA
-resolves `<rbf>SYSTEM11</rbf>` — the interim "XN" prefix is retired. If you installed an
-earlier build, delete any old `XNSYSTEM11*.rbf` from `_Arcade/cores/` and replace your MRAs
-with this release's set (the old MRAs point at the old name). The bitstream content is
-identical to the verified 20260816 build (same MD5).
+- **The OSD no longer pauses the game by default.** A new OSD option —
+  **"Pause when OSD is open"** (default **Off**) — controls it: leave it Off and
+  the game keeps running, sound and all, while you're in the menu; switch it On
+  to get the old freeze-on-menu behavior back. The mappable Pause button is
+  unchanged.
+
+The core file is `Arcade-SYSTEM11_20260911b.rbf` (the "b" keeps it after — and
+distinct from — the same-day supporter build in MiSTer's version-name sorting).
+Everything below from 20260901 carries over unchanged.
+
+## New in 20260901
+
+This is the **standard edition** of the core. It carries the full 20260818 core content —
+the C352 audio fix across all twelve titles, the cleaned-up source tree, the retired "XN"
+prefix, and the all-clocks-positive timing closure — trimmed to a lean, play-only build:
+
+- Two supporter-edition hardware features (CRT Adjust and DB9/DB15 joystick support)
+  are not included. Because the user-port pin those features borrowed is back on its
+  original duty, the **secondary SPI-SD add-on works again** with this edition.
+- The pause/credits overlay screen is not included; pausing (button or OSD) simply
+  freezes the core on the last game frame.
+- All development/debug instrumentation is stripped from the bitstream and the OSD:
+  no Debug menu page, no FPS counter, no boot-debug overlay, and no JTAG probe logic.
+  The DIP-switch Test entry on the DIP Switches page remains for operator settings.
+
+Also in this release:
+
+- **Tekken 2 alternate revisions fixed**: the six older revisions (TES1/TES2/TES3
+  VER.A/B/C) run on the coh100 board with the earlier CXD8538Q GPU; the core now
+  selects the correct GPU type for them via their MRAs, fixing the corrupt
+  graphics those versions showed. The primary TES2-VER.D (and TES3-VER.D) were
+  always correct.
+- **Accurate cabinet inputs**: both physical DIP switches are exposed with MAME's
+  exact names — "DIP1 (Test)" enters each game's service menu, "DIP2 (Freeze)"
+  freezes — and the cabinet Service button is now mappable (OSD → Define buttons),
+  so service menus are fully operable.
+- **Game-appropriate button labels**: every MRA names its buttons for its game
+  (Tekken LP/RP/LK/RK, Soul Edge Horizontal/Vertical/Kick/Guard, Point Blank 2
+  Trigger, My Angel 3 Answer 1-4, and so on).
+- **Light-gun options only for light-gun games**: the Light Gun OSD page and gun
+  input now appear only for Point Blank 2 and Gunbarl.
+
+If you installed an earlier build, delete any old `XNSYSTEM11*.rbf` from `_Arcade/cores/`
+and replace your MRAs with this release's set (the old MRAs point at the old name).
 
 ## Games
 
@@ -34,28 +74,29 @@ Primary titles (one per game; other regions/revisions live in `releases/_Arcade/
 - Point Blank 2 (World GNB2-VER.A)
 - Gunbarl (Japan GNB1-VER.A)
 
-*(+20 alternate region/revision MRAs under `releases/_Arcade/_alternatives/`.)*
+*(+24 alternate region/revision MRAs under `releases/_Arcade/_alternatives/`; Gunbarl, the Japanese release of Point Blank 2, ships under `_alternatives/_Point Blank 2/`.)*
 **Family Bowl** remains out of scope
-
-### CRT Adjust (analog geometry)
-
-Includes **CRT Adjust** (OSD → Video & Audio): H-Size / H-Position / V-Shift for analog CRTs. Default **Off** (HDMI/analog untouched); turn On when driving a CRT off the analog DAC. H-Size is invisible on HDMI by design.
-
-### DB9 / SNAC8 joystick support
-
-**UserIO Joystick** OSD option enables DB9MD Megadrive (3/6-button) and DB15 Neo-Geo/Supergun joystick input via splitters designed by Antonio Villena (compatible with the MiSTer-DB9 project's DB9MD 3-button and 6-button connectors, and the DB15 Neo-Geo standard). Up to 2 players supported.
-
-**OSD navigation from the stick** requires the [MiSTer-DB9 project's Main_MiSTer fork](https://github.com/MiSTer-devel/Main_MiSTer) with a compatible `menu.rbf`. In-game input works with stock MiSTer firmware.
 
 ## Controls
 
-Standard System 11 controls (up to 4 buttons in the P1 register, plus coin/start). Labels come from each MRA's `<buttons>` tag. Supports keyboard, joystick, and UserIO Joystick (DB9/DB15) via the OSD option above.
+Standard System 11 controls (up to 4 buttons in the P1 register, plus coin/start). Labels come from each MRA's `<buttons>` tag. Supports keyboard and USB joystick input.
 
 ## Install
 
-Copy the `_Arcade/` folder onto your SD card's root folder: this places the `.mra` files (and `_alternatives/`) directly in `_Arcade/`, and `cores/Arcade-SYSTEM11_20260818.rbf` in `_Arcade/cores/`. **Remove stale `XNSYSTEM11_*` cores and MRAs from earlier builds** — they reference the retired name. **Provide your own romsets — nothing copyrighted is included.** 
+Copy the `_Arcade/` folder onto your SD card's root folder: this places the `.mra` files (and `_alternatives/`) directly in `_Arcade/`, and `cores/Arcade-SYSTEM11_20260911b.rbf` in `_Arcade/cores/`. **Remove stale `XNSYSTEM11_*` cores and MRAs from earlier builds** — they reference the retired name. **Provide your own romsets — nothing copyrighted is included.**
 
-MRAs reference romsets by name only. The MRA names are self-descriptive).
+MRAs reference romsets by name only.
+
+### A note on MRA load layout
+
+These MRAs use one ROM stream per hardware region (program / banked data / sound program /
+wave), which is the layout this core's loader is built around: each stream has its own
+SDRAM base and address window in the loader hardware. A concatenated single-stream "fast
+load" MRA layout is **not** used here because the core routes downloads strictly by stream
+index — the program window wraps at 4 MB, so a single 24 MB+ concatenated stream would
+self-overwrite — and the fixed offsets such a layout assumes do not match this core's SDRAM
+map. Adopting it would require loader RTL changes and a re-verification of every title's
+load path; until then the per-region layout remains the correct, verified one.
 
 ## Credits & attribution
 
@@ -63,11 +104,9 @@ This core stands on the work of others, gratefully acknowledged:
 
 - **PSX_MiSTer** by **Robert Peip (FPGAzumSpass)** — the PlayStation core this System 11 core derives from, providing the R3000A CPU, GPU, GTE, DMA, and memory subsystem.
 - **The MiSTer project** and its framework (`sys/`) — Alexey Melnikov (**Sorgelig**) and the MiSTer-devel contributors.
-- **MiSTer-CRT-Adjust** — rmonic79 (with Andrea Bogazzi) — the core-side analog CRT geometry module used for H-Size / H-Position / V-Shift.
-- **MiSTer-DB9 project** — Aitor Pelaez (**NeuroRulez**), Victor Trucco, Fernando Mosquera, Timothy Redaelli, and Antonio Villena (DB9 splitter hardware design) — the joystick adapter and controller framework.
 - **C76 M37702 / C352 / KEYCUS** — original FPGA re-implementations of System 11's sound and security hardware.
 - **The MAME project** — the hardware documentation and reference behavior used to develop System 11 board support (per-manufacturer boot ROM, CAT702 security, ROM banking, NVRAM/EEPROM) as an independent re-implementation.
-- **System 11 hardware and chipset re-implementations** — **XelaNotPu**: the System 11 hardware (per-manufacturer boot ROM, CAT702 security, ROM banking, NVRAM/EEPROM), the sound-chip re-implementations (C76 M37702, C352), and the XN pause-overlay artwork and README banner.
+- **System 11 hardware and chipset re-implementations** — **XelaNotPu**: the System 11 hardware (per-manufacturer boot ROM, CAT702 security, ROM banking, NVRAM/EEPROM), the sound-chip re-implementations (C76 M37702, C352), and the XN README banner artwork.
 
 ## License
 

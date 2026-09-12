@@ -95,10 +95,6 @@ module hps_io #(parameter CONF_STR, CONF_STR_BRAM=0, PS2DIV=0, WIDE=0, VDNUM=1, 
 	// ps2 alternative interface.
 
 	// [8] - extended, [9] - pressed, [10] - toggles with every press/release
-	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: raw DB9 pad word for OSD navigation (UIO 0x0F)
-	input      [15:0] joy_raw,
-	// [MiSTer-DB9 END]
-
 	output reg [10:0] ps2_key = 0,
 
 	// [24] - toggles with every event
@@ -354,9 +350,6 @@ always@(posedge clk_sys) begin : uio_block
 
 			casex(cmd)
 				// buttons and switches
-				// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: read user_io raw joy (UIO 0x0F)
-				'h0f: io_dout <= joy_raw;
-				// [MiSTer-DB9 END]
 				'h01: cfg <= io_din;
 				'h02: if(byte_cnt==1) joystick_0[15:0] <= io_din; else joystick_0[31:16] <= io_din;
 				'h03: if(byte_cnt==1) joystick_1[15:0] <= io_din; else joystick_1[31:16] <= io_din;
