@@ -357,22 +357,27 @@ parameter CONF_STR = {
 	// items only invited broken half-loads. (Same cleanup S12 shipped in its
 	// 20260813 release.)
 	"-;",
-	// "Video & Audio" (P1) hidden 2026-07-06 per request — status bits keep their
-	// functions/defaults; re-add these lines to unhide.
-	// "P1,Video & Audio;",
-	// "P1O[33:32],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
-	// "P1O[35:34],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
-	// "DEP1O[62],Fixed HBlank,On,Off;",
-	// "DEP1O[55],Fixed VBlank,Off,On;",
-	// "d5P1O[4:3],Vertical Crop,Off,On(224/270),On(216/256);",
-	// "P1O[67],Horizontal Crop,Off,On;",
-	// "P1O[61],Black Transitions,On,Off;",
-	// "P1O[41],Deinterlacing,Weave,Bob;",
-	// "P1O[89],Render 480i as 480p,Off,On;",
-	// "P1O[60],Sync 480i for HDMI,Off,On;",
-	// "P1O[24],Rotate,Off,On;",
-	// "P1O[22],Dithering,On,Off;",
-	// "P1O[8:7],Stereo Mix,None,25%,50%,100%;",
+	// "Video & Audio" (P1) re-enabled — this page was hidden 2026-07-06 per
+	// request, but the underlying status bits (Deinterlacing / Render 480i
+	// as 480p / Sync 480i for HDMI) were still wired up with no way to reach
+	// them. On HDMI-only setups (no CRT) the native interlaced 480i output
+	// is accepted by most TVs but rejected as "signal out of range" by many
+	// PC/LCD monitors; exposing these options lets those users switch to a
+	// progressive/deinterlaced mode without needing a CRT to fall back on.
+	"P1,Video & Audio;",
+	"P1O[33:32],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P1O[35:34],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
+	"DEP1O[62],Fixed HBlank,On,Off;",
+	"DEP1O[55],Fixed VBlank,Off,On;",
+	"d5P1O[4:3],Vertical Crop,Off,On(224/270),On(216/256);",
+	"P1O[67],Horizontal Crop,Off,On;",
+	"P1O[61],Black Transitions,On,Off;",
+	"P1O[41],Deinterlacing,Weave,Bob;",
+	"P1O[89],Render 480i as 480p,Off,On;",
+	"P1O[60],Sync 480i for HDMI,Off,On;",
+	"P1O[24],Rotate,Off,On;",
+	"P1O[22],Dithering,On,Off;",
+	"P1O[8:7],Stereo Mix,None,25%,50%,100%;",
 	// The two physical DIP switches (MAME namcos11 "DIP SW2"), named exactly as
 	// MAME names them. DIP1 (Test) enters each game's service menu.
 	"P2,DIP Switches;",
