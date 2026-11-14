@@ -79,6 +79,13 @@ Primary titles (one per game; other regions/revisions live in `releases/_Arcade/
 
 Standard System 11 controls (up to 4 buttons in the P1 register, plus coin/start). Labels come from each MRA's `<buttons>` tag. Supports keyboard and USB joystick input.
 
+### Light guns (Point Blank 2 / Gunbarl)
+
+The Light Gun OSD page (shown only for gun games) has:
+
+- **P1 aims with**: *Mouse* (default: relative PS/2 mouse, scaled by Gun Sensitivity) or *Gun (P1 analog)*: the absolute position of player 1's left analog stick. Use *Gun* for light guns that present themselves as a joystick, such as a Sinden in joystick mode. The trigger is player 1's button 1.
+- **Sinden border**: *Off* (default), *2 px*, *4 px* or *8 px*. Draws a white frame over the outer pixels of the picture so a Sinden gun can find the screen. It follows the measured active area, so it holds for any resolution the game sets. 4 px stays fully visible through most scalers.
+
 ## Install
 
 Copy the `_Arcade/` folder onto your SD card's root folder: this places the `.mra` files (and `_alternatives/`) directly in `_Arcade/`, and `cores/Arcade-SYSTEM11_20260911.rbf` in `_Arcade/cores/`. **Remove stale `XNSYSTEM11_*` cores and MRAs from earlier builds** — they reference the retired name. **Provide your own romsets — nothing copyrighted is included.**

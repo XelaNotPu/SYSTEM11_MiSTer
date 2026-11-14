@@ -386,6 +386,10 @@ parameter CONF_STR = {
 	"H0P4,Light Gun;",
 	"H0P4O[100],Crosshair,Off,On;",
 	"H0P4O[99:98],Gun Sensitivity,1/4,1/8,1/2,1/1;",
+	// Sinden light gun: a white frame round the picture (the gun finds the screen by it), and
+	// P1 aiming from the gun's absolute position (Sinden joystick mode = P1 left analog stick).
+	"H0P4O[103:102],Sinden border,Off,2 px,4 px,8 px;",
+	"H0P4O[101],P1 aims with,Mouse,Gun (P1 analog);",
 	// GITHUB output template (2026-09-01): the Debug OSD page (FPS counter, boot
 	// debug overlay, test/service toggles) is excluded from this edition.
 	"-;",
@@ -1102,9 +1106,17 @@ wire signed [15:0] dx_f       = $signed({{7{ms_dx[8]}}, ms_dx}) <<< gun_lsh;
 wire signed [15:0] dy_f       = $signed({{7{ms_dy[8]}}, ms_dy}) <<< gun_lsh;
 wire signed [16:0] nx_f       = $signed({3'b0, px_f}) + dx_f;
 wire signed [16:0] ny_f       = $signed({5'b0, py_f}) - dy_f;   // PS/2 +Y is UP, screen Y grows DOWN
+// Absolute aiming for a light gun in joystick mode (Sinden): the P1 left analog axes give the
+// position directly (-128..127, X left->right, Y top->bottom), mapped onto the virtual screen.
+wire  [7:0] gun_ax_u = joystick_analog_l0[7:0]  ^ 8'h80;   // 0..255
+wire  [7:0] gun_ay_u = joystick_analog_l0[15:8] ^ 8'h80;
+wire        gun_abs  = status[101];
 always @(posedge clk_1x) begin
    mouse_ev_d <= mouse[24];
-   if (mouse_ev_d != mouse[24]) begin              // one update per mouse packet
+   if (gun_abs) begin                               // follow the gun every clock (no deltas)
+      px_f <= {gun_ax_u, gun_ax_u[7:6], 4'd0};      // 0..1023 virtual, 4 fraction bits
+      py_f <= {gun_ay_u, 4'd0};                     // 0..255 virtual
+   end else if (mouse_ev_d != mouse[24]) begin      // one update per mouse packet
       px_f <= (nx_f < 0) ? 14'd0 : (nx_f > $signed({3'b0, PXMAX_F})) ? PXMAX_F : nx_f[13:0];
       py_f <= (ny_f < 0) ? 12'd0 : (ny_f > $signed({5'b0, PYMAX_F})) ? PYMAX_F : ny_f[11:0];
    end
@@ -2248,10 +2260,17 @@ wire        xhair2 = status[100] & zn_gun_game & p2_gun_active
                     & (((xh2_dy == 12'd0) & (xh2_dx <= 12'd6))
                      | ((xh2_dx == 12'd0) & (xh2_dy <= 12'd6)));
 
+// Sinden border: white over the picture's outer pixels, using the measured active area, so it
+// follows whatever raster the game sets. 0 = Off, 1/2/3 = 2/4/8 px.
+wire [11:0] brd_w  = 12'd1 << status[103:102];
+wire        sinden_brd = (|status[103:102]) & zn_gun_game & ~video_gamma.hb & ~video_gamma.vb
+                    & ((xh_hcnt < brd_w) | (xh_vcnt < brd_w)
+                     | (xh_hcnt + brd_w >= h_act) | (xh_vcnt + brd_w >= v_act));
+
 assign CE_PIXEL = ce_pix;
-assign VGA_R    = xhair ? 8'hFF : xhair2 ? 8'h00 : video_gamma.red;
-assign VGA_G    = (xhair | xhair2) ? 8'hFF : video_gamma.green;
-assign VGA_B    = xhair ? 8'hFF : xhair2 ? 8'h00 : video_gamma.blue;
+assign VGA_R    = (sinden_brd | xhair) ? 8'hFF : xhair2 ? 8'h00 : video_gamma.red;
+assign VGA_G    = (sinden_brd | xhair | xhair2) ? 8'hFF : video_gamma.green;
+assign VGA_B    = (sinden_brd | xhair) ? 8'hFF : xhair2 ? 8'h00 : video_gamma.blue;
 assign VGA_VS   = video_gamma.vs;
 assign VGA_HS   = video_gamma.hs;
 assign VGA_DE   = ~(video_gamma.vb | video_gamma.hb);
